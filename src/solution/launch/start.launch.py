@@ -7,14 +7,15 @@
     gui   — разрешены ли окна (rviz, cv2.imshow); на прогоне организаторов false
     slam  — запустить slam_toolbox (строит /map и TF map→odom)
     nav   — запустить Nav2 (требует slam:=true или свою локализацию)
+    explore — исследование по лидару с памятью пути; по умолчанию включает slam
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, RegisterEventHandler
-from launch.conditions import IfCondition
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, GroupAction, IncludeLaunchDescription, RegisterEventHandler
+from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnShutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -28,6 +29,7 @@ def generate_launch_description():
     gui = LaunchConfiguration('gui')
     slam = LaunchConfiguration('slam')
     nav = LaunchConfiguration('nav')
+    explore = LaunchConfiguration('explore')
     use_sim_time = {'use_sim_time': True}
 
     courier = Node(
@@ -36,6 +38,16 @@ def generate_launch_description():
         name='courier',
         output='screen',
         parameters=[use_sim_time, {'gui': gui}],
+        condition=UnlessCondition(nav),
+    )
+
+    explorer = Node(
+        package=PACKAGE,
+        executable='explorer_node.py',
+        name='explorer',
+        output='screen',
+        parameters=[use_sim_time],
+        condition=IfCondition(explore),
     )
 
     slam_toolbox = Node(
@@ -73,11 +85,12 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('gui', default_value='true'),
-        DeclareLaunchArgument('slam', default_value='false'),
+        DeclareLaunchArgument('explore', default_value='false'),
+        DeclareLaunchArgument('slam', default_value=explore),
         DeclareLaunchArgument('nav', default_value='false'),
-        courier,
         slam_toolbox,
-        navigation,
+        GroupAction(condition=UnlessCondition(explore), actions=[courier, navigation]),
+        explorer,
         rviz,
         stop_robot,
     ])

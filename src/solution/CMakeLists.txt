@@ -14,6 +14,7 @@ install(TARGETS example_cpp DESTINATION lib/${PROJECT_NAME})
 # ---- Python узлы (каждый новый скрипт добавьте в этот список и сделайте исполняемым)
 install(PROGRAMS
   scripts/courier_node.py
+  scripts/explorer_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
