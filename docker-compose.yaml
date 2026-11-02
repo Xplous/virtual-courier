@@ -18,10 +18,11 @@ services:
     environment:
       <<: *ros-env
       WEBOTS_GUI: ${WEBOTS_GUI:-true}
+      WEBOTS_MODE: ${WEBOTS_MODE:-realtime}
       SCENARIO: /scenarios/${SCENARIO:-public_1}.yaml
       VC_TEAM: ${VC_TEAM:-local}
     ipc: host
-    networks: [general]
+    network_mode: host
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /dev/dri:/dev/dri   # ускорение графики (Intel/AMD)
@@ -45,7 +46,7 @@ services:
       <<: *ros-env
       GUI: ${GUI:-true}
     ipc: host
-    networks: [general]
+    network_mode: host
     depends_on:
       scene:
         condition: service_healthy
@@ -53,7 +54,3 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /dev/dri:/dev/dri   # ускорение графики (Intel/AMD)
       - ./src/solution:/ros_ws/src/solution
-
-networks:
-  general:
-    driver: bridge
