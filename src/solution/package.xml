@@ -29,6 +29,8 @@
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_common</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
   <exec_depend>nav2_mppi_controller</exec_depend>
   <exec_depend>explore_lite</exec_depend>
 

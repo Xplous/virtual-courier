@@ -1,0 +1,13 @@
+cell_explorer:
+  ros__parameters:
+    use_sim_time: true
+    update_period: 1.0
+    candidate_count: 5
+    path_timeout: 2.0
+    path_weight: 1.0
+    turn_weight: 1.0
+    switch_margin: 1.0
+    corridor_cells: 4
+    extension_distance: 1.5
+    clearance: 0.25
+    retry_delay: 10.0

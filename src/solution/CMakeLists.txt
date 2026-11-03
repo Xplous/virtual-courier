@@ -18,6 +18,7 @@ install(PROGRAMS
   scripts/maze_grid_node.py
   scripts/exploration_map_node.py
   scripts/tremaux_node.py
+  scripts/cell_explorer_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
