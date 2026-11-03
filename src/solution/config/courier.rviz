@@ -7,11 +7,18 @@ Visualization Manager:
   Class: ""
   Displays:
     - Class: rviz_default_plugins/Grid
-      Name: Grid
+      Name: Maze grid (2 m)
       Enabled: true
-      Cell Size: 1
-      Plane Cell Count: 20
-      Reference Frame: odom
+      Cell Size: 2
+      Plane Cell Count: 16
+      Reference Frame: maze_grid
+      Color: 0; 200; 255
+      Alpha: 0.25
+      # Старт находится в центре клетки, поэтому линии смещены на полклетки.
+      Offset:
+        X: 1
+        Y: 1
+        Z: 0.03
     - Class: rviz_default_plugins/Map
       Name: Map
       Enabled: true
@@ -47,6 +54,20 @@ Visualization Manager:
       Enabled: true
       Topic:
         Value: /plan
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Cell boundaries
+      Enabled: true
+      Topic:
+        Value: /maze_edges
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Exploration targets
+      Enabled: true
+      Topic:
+        Value: /exploration_targets
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
     - Class: rviz_default_plugins/Image
       Name: Camera
       Enabled: true
@@ -54,7 +75,7 @@ Visualization Manager:
         Value: /camera/image_raw
         Reliability Policy: Best Effort
   Global Options:
-    Fixed Frame: odom
+    Fixed Frame: map
     Background Color: 48; 48; 48
     Frame Rate: 30
   Tools:

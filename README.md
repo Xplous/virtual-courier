@@ -152,6 +152,60 @@ cp scene/scenarios/public_1.yaml scene/scenarios/my_test.yaml   # отредак
 SCENARIO=my_test docker compose up
 ```
 
+## Пробное исследование: explore_lite + Nav2/MPPI
+
+Локальный запуск на хосте с ROS 2 Humble. MPPI должен быть установлен
+(`ros-humble-nav2-mppi-controller`). Зависимость explore_lite собирается отдельно:
+
+```bash
+source /opt/ros/humble/setup.bash
+mkdir -p playground-vaniog/ready-exploration/deps_ws/src
+git clone https://github.com/robo-friends/m-explore-ros2.git playground-vaniog/ready-exploration/deps_ws/src/m-explore-ros2
+git -C playground-vaniog/ready-exploration/deps_ws/src/m-explore-ros2 checkout 326cf8a0b487c34246bb8f3326afbcd69576dc60
+git -C playground-vaniog/ready-exploration/deps_ws/src/m-explore-ros2 apply "$PWD/src/solution/patches/explore_lite-goal-selection.patch"
+(cd playground-vaniog/ready-exploration/deps_ws && colcon build --symlink-install --packages-up-to explore_lite --executor sequential)
+source playground-vaniog/ready-exploration/deps_ws/install/setup.bash
+(cd src/solution && colcon build --symlink-install --executor sequential)
+source src/solution/install/setup.bash
+export ROS_DOMAIN_ID=42
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/.vscode/fastdds.xml"
+ros2 launch solution explore.launch.py
+```
+
+Перед запуском остановите прежние узлы управления. Сцену запустите отдельно через
+`WEBOTS_MODE=realtime docker compose up -d scene`. Файл `.vscode/fastdds.xml` —
+локальный профиль UDP для связи ROS на хосте с контейнером сцены.
+В RViz отображаются `/map`, маршрут `/plan` и границы исследования `/explore/frontiers`.
+Этот запуск не использует самописный Explorer. Сетка нужна только фильтру паллетов:
+`/exploration_map` исключает внутренние тени из целей explore_lite, а Nav2 продолжает
+читать исходную `/map`. Неизвестные участки возле границ клеток сохраняются.
+Патч explore_lite учитывает угол до цели (`orientation_scale`) и удерживает текущую
+цель, пока другая не выигрывает больше `goal_switch_margin`. Разворот разрешён,
+если подходящих целей впереди нет; расстояние до цели оценивается по прямой.
+Внешний пакет пока подключён только для локального прототипа; для сдачи его нужно
+включить в допустимый способ установки зависимостей.
+
+## Пробное исследование по Тремо
+
+```bash
+source /opt/ros/humble/setup.bash
+source src/solution/install/setup.bash
+export ROS_DOMAIN_ID=42
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE="$PWD/.vscode/fastdds.xml"
+ros2 launch solution tremaux.launch.py
+```
+
+Запускайте после остановки предыдущего решения. Тремо хранит отметки переходов
+между клетками 2×2 м, проверяет новые проходы и возвращается по уже пройденным.
+Лидар управляет реактивным объездом, скорость до 0,35 м/с. Nav2 и explore_lite
+в этом варианте не запускаются. SLAM нужен для узнавания клеток и стен.
+В RViz зелёные линии показывают пройденные переходы, красная точка — выбранную клетку.
+Полнота обхода гарантируется для корректно распознанного конечного графа при
+успешном проезде переходов. Потеря клетки или неудачный проезд вызывают остановку,
+а не сообщение об успешном исследовании.
+
 ## Сдача решения
 
 1. Всё решение — **только в `src/solution`**. Изменения в других файлах на прогоне игнорируются:

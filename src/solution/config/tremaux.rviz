@@ -1,0 +1,70 @@
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+- Class: rviz_common/Views
+  Name: Views
+Visualization Manager:
+  Class: ''
+  Displays:
+  - Class: rviz_default_plugins/Map
+    Name: Map
+    Enabled: true
+    Topic:
+      Value: /map
+      Durability Policy: Transient Local
+      Reliability Policy: Reliable
+    Alpha: 0.7
+  - Class: rviz_default_plugins/TF
+    Name: TF
+    Enabled: true
+    Show Names: false
+    Marker Scale: 0.5
+  - Class: rviz_default_plugins/LaserScan
+    Name: LaserScan
+    Enabled: true
+    Topic:
+      Value: /scan
+      Reliability Policy: Best Effort
+    Size (m): 0.04
+    Color Transformer: FlatColor
+    Color: 255; 50; 50
+  - Class: rviz_default_plugins/Odometry
+    Name: Odometry
+    Enabled: true
+    Topic:
+      Value: /odom
+    Keep: 1
+    Shape:
+      Value: Arrow
+  - Class: rviz_default_plugins/Image
+    Name: Camera
+    Enabled: true
+    Topic:
+      Value: /camera/image_raw
+      Reliability Policy: Best Effort
+  - Class: rviz_default_plugins/MarkerArray
+    Name: Tremaux passages and target
+    Enabled: true
+    Topic:
+      Value: /tremaux/graph
+      Reliability Policy: Reliable
+      Durability Policy: Volatile
+  Global Options:
+    Fixed Frame: map
+    Background Color: 48; 48; 48
+    Frame Rate: 30
+  Tools:
+  - Class: rviz_default_plugins/Interact
+  - Class: rviz_default_plugins/MoveCamera
+  - Class: rviz_default_plugins/SetGoal
+    Topic:
+      Value: /goal_pose
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Current View
+      Scale: 60
+      Target Frame: base_link
+Window Geometry:
+  Width: 1200
+  Height: 800

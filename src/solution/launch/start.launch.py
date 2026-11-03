@@ -7,7 +7,7 @@
     gui   — разрешены ли окна (rviz, cv2.imshow); на прогоне организаторов false
     slam  — запустить slam_toolbox (строит /map и TF map→odom)
     nav   — запустить Nav2 (требует slam:=true или свою локализацию)
-    explore — исследование по лидару с памятью пути; по умолчанию включает slam
+    explore — управление по лидару с памятью посещений клеток; включает slam
 """
 
 import os
@@ -79,6 +79,15 @@ def generate_launch_description():
         condition=IfCondition(gui),
     )
 
+    maze_grid = Node(
+        package=PACKAGE,
+        executable='maze_grid_node.py',
+        name='maze_grid',
+        output='screen',
+        parameters=[use_sim_time],
+        condition=IfCondition(slam),
+    )
+
     # При остановке решения робот должен остановиться.
     stop_robot = RegisterEventHandler(OnShutdown(on_shutdown=[ExecuteProcess(
         cmd=['ros2', 'topic', 'pub', '--once', '/cmd_vel', 'geometry_msgs/msg/Twist', '{}'])]))
@@ -89,6 +98,7 @@ def generate_launch_description():
         DeclareLaunchArgument('slam', default_value=explore),
         DeclareLaunchArgument('nav', default_value='false'),
         slam_toolbox,
+        maze_grid,
         GroupAction(condition=UnlessCondition(explore), actions=[courier, navigation]),
         explorer,
         rviz,

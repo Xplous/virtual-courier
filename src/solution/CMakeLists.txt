@@ -15,6 +15,9 @@ install(TARGETS example_cpp DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS
   scripts/courier_node.py
   scripts/explorer_node.py
+  scripts/maze_grid_node.py
+  scripts/exploration_map_node.py
+  scripts/tremaux_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
