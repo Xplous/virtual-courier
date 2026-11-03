@@ -1,46 +1,5 @@
 # Nav2 для робота Courier. Основано на nav2_bringup/params/nav2_params.yaml:
-# base_link вместо base_footprint, радиус 0.18 м, скорости до 0.5 м/с.
-amcl:
-  ros__parameters:
-    use_sim_time: True
-    alpha1: 0.2
-    alpha2: 0.2
-    alpha3: 0.2
-    alpha4: 0.2
-    alpha5: 0.2
-    base_frame_id: "base_link"
-    beam_skip_distance: 0.5
-    beam_skip_error_threshold: 0.9
-    beam_skip_threshold: 0.3
-    do_beamskip: false
-    global_frame_id: "map"
-    lambda_short: 0.1
-    laser_likelihood_max_dist: 2.0
-    laser_max_range: 100.0
-    laser_min_range: -1.0
-    laser_model_type: "likelihood_field"
-    max_beams: 60
-    max_particles: 2000
-    min_particles: 500
-    odom_frame_id: "odom"
-    pf_err: 0.05
-    pf_z: 0.99
-    recovery_alpha_fast: 0.0
-    recovery_alpha_slow: 0.0
-    resample_interval: 1
-    robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    save_pose_rate: 0.5
-    sigma_hit: 0.2
-    tf_broadcast: true
-    transform_tolerance: 1.0
-    update_min_a: 0.2
-    update_min_d: 0.25
-    z_hit: 0.5
-    z_max: 0.05
-    z_rand: 0.5
-    z_short: 0.05
-    scan_topic: scan
-
+# base_link вместо base_footprint, радиус 0.18 м, MPPI до 0.7 м/с.
 bt_navigator:
   ros__parameters:
     use_sim_time: True
@@ -120,7 +79,7 @@ controller_server:
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugin: "progress_checker"
-    goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
+    goal_checker_plugins: ["general_goal_checker"]
     controller_plugins: ["FollowPath"]
 
     # Progress checker parameters
@@ -128,12 +87,6 @@ controller_server:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.5
       movement_time_allowance: 10.0
-    # Goal checker parameters
-    #precise_goal_checker:
-    #  plugin: "nav2_controller::SimpleGoalChecker"
-    #  xy_goal_tolerance: 0.25
-    #  yaw_goal_tolerance: 0.25
-    #  stateful: True
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
@@ -149,11 +102,11 @@ controller_server:
       vx_std: 0.2
       vy_std: 0.0
       wz_std: 0.4
-      vx_max: 0.5
+      vx_max: 0.7
       vx_min: -0.15
       vy_max: 0.0
       wz_max: 1.2
-      prune_distance: 1.5
+      prune_distance: 2.2
       transform_tolerance: 0.3
       temperature: 0.3
       gamma: 0.015
@@ -206,8 +159,8 @@ local_costmap:
       robot_base_frame: base_link
       use_sim_time: True
       rolling_window: true
-      width: 3
-      height: 3
+      width: 5
+      height: 5
       resolution: 0.05
       robot_radius: 0.18
       plugins: ["voxel_layer", "inflation_layer"]
@@ -235,10 +188,6 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_topic: /map
-        map_subscribe_transient_local: True
       always_send_full_costmap: True
 
 global_costmap:
@@ -276,21 +225,6 @@ global_costmap:
         cost_scaling_factor: 3.0
         inflation_radius: 0.4
       always_send_full_costmap: True
-
-map_server:
-  ros__parameters:
-    use_sim_time: True
-    # Overridden in launch by the "map" launch configuration or provided default value.
-    # To use in yaml, remove the default "map" value in the tb3_simulation_launch.py file & provide full path to map below.
-    yaml_filename: ""
-
-map_saver:
-  ros__parameters:
-    use_sim_time: True
-    save_map_timeout: 5.0
-    free_thresh_default: 0.25
-    occupied_thresh_default: 0.65
-    map_subscribe_transient_local: True
 
 planner_server:
   ros__parameters:
@@ -338,10 +272,6 @@ behavior_server:
     min_rotational_vel: 0.4
     rotational_acc_lim: 3.2
 
-robot_state_publisher:
-  ros__parameters:
-    use_sim_time: True
-
 waypoint_follower:
   ros__parameters:
     use_sim_time: True
@@ -359,7 +289,7 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.5, 0.0, 1.2]
+    max_velocity: [0.7, 0.0, 1.2]
     min_velocity: [-0.15, 0.0, -1.2]
     max_accel: [0.8, 0.0, 3.0]
     max_decel: [-1.0, 0.0, -3.0]

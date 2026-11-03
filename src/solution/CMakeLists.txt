@@ -2,28 +2,17 @@ cmake_minimum_required(VERSION 3.8)
 project(solution)
 
 find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
 
-# ---- C++ узлы (пример; добавляйте свои по аналогии)
-add_executable(example_cpp src/example_cpp.cpp)
-ament_target_dependencies(example_cpp rclcpp sensor_msgs geometry_msgs)
-install(TARGETS example_cpp DESTINATION lib/${PROJECT_NAME})
-
-# ---- Python узлы (каждый новый скрипт добавьте в этот список и сделайте исполняемым)
 install(PROGRAMS
-  scripts/courier_node.py
-  scripts/explorer_node.py
-  scripts/maze_grid_node.py
-  scripts/exploration_map_node.py
-  scripts/tremaux_node.py
   scripts/cell_explorer_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(FILES scripts/maze_grid_node.py DESTINATION lib/${PROJECT_NAME})
+
 install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}/
+  PATTERN "__pycache__" EXCLUDE
 )
 
 ament_package()
