@@ -7,7 +7,8 @@ from collections import deque
 import cv2
 import numpy as np
 import rclpy
-from geometry_msgs.msg import Point, PoseStamped
+from geometry_msgs.msg import Point, PointStamped, PoseStamped
+from tf2_geometry_msgs import do_transform_point
 from nav2_msgs.action import ComputePathToPose, NavigateToPose
 from rclpy.action import ActionClient
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -132,44 +133,41 @@ class CellExplorer(MazeGrid):
         self.markers = self.create_publisher(MarkerArray, "/cell_explorer/markers", 10)
         self.delivery_state = "EXPLORE"
         self.start_point = None
+        self.station_cell = None
+        self.station_result = self.create_publisher(String, '/delivery/navigation_result', 10)
+        self.create_subscription(PointStamped, '/delivery/station_target', self.on_station_target, 10)
         self.create_subscription(
             String, "/delivery/state", self.on_delivery_state, 10
         )
         self.create_timer(self.param("update_period"), self.tick)
 
     def on_delivery_state(self, msg: String):
-        prev = self.delivery_state
+        if msg.data == self.delivery_state:
+            return
+        self.get_logger().info(f'Доставка: {self.delivery_state} -> {msg.data}')
         self.delivery_state = msg.data
-        if prev != self.delivery_state:
-            self.get_logger().info(
-                f"[Explorer] Состояние доставки: {prev} -> {self.delivery_state}"
+        self.station_cell = None
+        self.evaluation = None
+        self.request_id += 1
+        self.nav_generation += 1
+        if self.nav_handle is not None:
+            self.nav_handle.cancel_goal_async()
+        self.nav_handle = None
+        self.active = None
+
+    def on_station_target(self, msg):
+        if self.delivery_state != 'DOCK_STATION' or self.station_cell is not None or not self.fitted:
+            return
+        try:
+            transform = self.buffer.lookup_transform(
+                'map', msg.header.frame_id, rclpy.time.Time.from_msg(msg.header.stamp)
             )
-            if self.delivery_state in (
-                "DOCK_STATION",
-                "LOAD_CARGO",
-                "DOCK_UNLOAD",
-                "UNLOAD",
-                "MISSION_COMPLETE",
-            ):
-                self.evaluation = None
-                self.request_id += 1
-                if self.nav_handle is not None:
-                    self.get_logger().info(
-                        "[Explorer] Отмена активной навигации: приоритет у контроллера доставки."
-                    )
-                    self.nav_handle.cancel_goal_async()
-                    self.nav_handle = None
-                    self.active = None
-            elif self.delivery_state == "NAV_TO_UNLOAD":
-                self.evaluation = None
-                self.request_id += 1
-                if self.nav_handle is not None:
-                    self.get_logger().info(
-                        "[Explorer] Перенаправление навигации в зону разгрузки (Старт)."
-                    )
-                    self.nav_handle.cancel_goal_async()
-                    self.nav_handle = None
-                    self.active = None
+        except TransformException:
+            return
+        point = do_transform_point(msg, transform).point
+        local = (np.array([point.x, point.y]) - self.grid_origin) @ self.grid_rotation
+        self.station_cell = tuple(np.floor(local / 2 + 0.5).astype(int))
+        self.get_logger().info(f'Клетка станции: {self.station_cell}')
 
     def param(self, name):
         return self.get_parameter(name).value
@@ -205,7 +203,6 @@ class CellExplorer(MazeGrid):
 
     def tick(self):
         if self.delivery_state in (
-            "DOCK_STATION",
             "LOAD_CARGO",
             "DOCK_UNLOAD",
             "UNLOAD",
@@ -241,6 +238,20 @@ class CellExplorer(MazeGrid):
         )
         if self.start_point is None:
             self.start_point = (self.position[0], self.position[1])
+
+        if self.delivery_state == 'DOCK_STATION':
+            if self.station_cell is None or self.active is not None:
+                return
+            point = self.free_point(self.station_cell)
+            if point is None:
+                self.station_result.publish(String(data='failed'))
+                return
+            self.send_navigation(dict(
+                cell=self.station_cell, probe=None, point=point,
+                key=(self.station_cell, 'station'), cost=0.0,
+                length=math.dist(self.position, point), is_station=True,
+            ))
+            return
 
         if self.delivery_state == "NAV_TO_UNLOAD":
             if self.active is not None and self.active.get("is_home"):
@@ -301,19 +312,14 @@ class CellExplorer(MazeGrid):
                 intermediate.add(cell)
                 cell = parents[cell]
             choices = {k: p for k, p in choices.items() if k[0] not in intermediate}
-        if not choices and (
-            self.active is None
-            or self.active["probe"] is not None
-            or self.active["cell"] in self.visited
-        ):
-            for cell in parents:
-                for adjacent in neighbours(cell):
-                    key = cell, adjacent
-                    if (
-                        self.edges.get(edge_key(cell, adjacent), "unknown") == "unknown"
-                        and key not in self.inspected
-                    ):
-                        choices[key] = self.free_point(cell, adjacent)
+        for cell in parents:
+            for adjacent in neighbours(cell):
+                key = cell, adjacent
+                if (
+                    self.edges.get(edge_key(cell, adjacent), "unknown") == "unknown"
+                    and key not in self.inspected
+                ):
+                    choices[key] = self.free_point(cell, adjacent)
         candidates = [
             dict(cell=k[0], probe=k[1], point=p, key=k)
             for k, p in choices.items()
@@ -453,9 +459,9 @@ class CellExplorer(MazeGrid):
             if current["length"] > self.param("extension_distance"):
                 if best["cost"] >= current["cost"] - self.param("switch_margin"):
                     best = current
-            elif extensions:
+            elif extensions and best["probe"] is None:
                 best = min(extensions, key=lambda c: c["cost"])
-            elif current["cell"] in self.visited:
+            elif current["probe"] is None and current["cell"] in self.visited:
                 onward = [c for c in valid if c["key"] != current["key"]]
                 if onward:
                     best = min(onward, key=lambda c: c["cost"])
@@ -485,6 +491,8 @@ class CellExplorer(MazeGrid):
             if not handle.accepted:
                 self.get_logger().warn(f'Nav2 отклонил цель {candidate["cell"]}.')
                 self.active = None
+                if candidate.get('is_station'):
+                    self.station_result.publish(String(data='failed'))
                 return
             self.get_logger().info(f'Nav2 принял цель {candidate["cell"]}.')
             self.nav_handle = handle
@@ -496,6 +504,8 @@ class CellExplorer(MazeGrid):
             status = f.result().status
             label = {4: "достигнута", 5: "отменена", 6: "ошибка"}.get(status, str(status))
             self.get_logger().info(f'Nav2: цель {candidate["cell"]} — {label}.')
+            if candidate.get('is_station'):
+                self.station_result.publish(String(data='reached' if status == 4 else 'failed'))
             if f.result().status == 4 and candidate["probe"]:
                 self.inspected.add(candidate["key"])
             elif f.result().status != 4:

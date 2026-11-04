@@ -3,7 +3,7 @@
 
 Отвечает за:
 1. Детекцию станций и зоны выгрузки по камере (StationDetector: ArUco + сигнальные лампы).
-2. Прецизионную PBVS-стыковку к станциям и зоне выгрузки (DockingController).
+2. Подъезд к клеткам станций через Nav2 и визуальную стыковку в зоне выгрузки.
 3. Приемку груза с контролем времени непрерывного покоя Dwell Time (CargoLoader).
 4. Выгрузку кубиков в зону у Старта с опрокидыванием кузова (UnloadController).
 5. Координацию состояний с глобальным навигатором через /delivery/state.
@@ -28,12 +28,15 @@ import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PointStamped, Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image, Imu, LaserScan
 from std_msgs.msg import Float64, String, UInt8
+from tf2_geometry_msgs import do_transform_point
+from tf2_ros import Buffer, TransformException, TransformListener
+from visualization_msgs.msg import Marker, MarkerArray
 
 TRAY_DOWN = 0.0
 TRAY_UNLOAD = 1.0  # рад — наклон лотка назад для выгрузки
@@ -60,14 +63,20 @@ class Courier(Node):
         self.dock_config = DockingConfig(target_dist=0.65, min_safe_laser_dist=0.28)
         self.cargo_loader = CargoLoader(config=LoaderConfig(dwell_target=2.0))
         self.unload_ctrl = UnloadController(target_rear_dist=0.35, min_safe_rear_dist=0.29)
+        self.unload_count = 0
 
         # Реестр обнаруженных станций {marker_id: StationDetection}
         self.known_stations = {}
+        self.station_cells = {}
+        self.collected_stations = set()
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
         self.target_station_id = None
-        self.marker_last_seen = None
+        self.station_target = None
+        self.station_nav_started = None
         self.station_retry_after = {}
-        self.marker_visible = True
         self.state = 'WAIT_SENSORS'
+        self.status_detail = 'Waiting for camera and lidar'
 
         # ---- подписки
         self.create_subscription(LaserScan, '/scan', self.on_scan, qos_profile_sensor_data)
@@ -82,12 +91,30 @@ class Courier(Node):
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.tray_pub = self.create_publisher(Float64, '/courier/tray_cmd', 10)
         self.state_pub = self.create_publisher(String, '/delivery/state', 10)
+        self.status_marker_pub = self.create_publisher(Marker, '/delivery/status_marker', 10)
+        self.station_markers_pub = self.create_publisher(MarkerArray, '/delivery/station_markers', 10)
+        self.station_target_pub = self.create_publisher(PointStamped, '/delivery/station_target', 10)
+        self.create_subscription(String, '/delivery/navigation_result', self.on_station_navigation, 10)
         self.stations_status_pub = self.create_publisher(String, '/delivery/stations_status', 10)
 
         self.timer = self.create_timer(0.1, self.control_loop)   # 10 Гц
         self.get_logger().info('Courier (модуль доставки) запущен, ожидание сенсоров…')
 
     # ================================================================ колбэки сенсоров
+
+    def on_station_navigation(self, msg):
+        if self.state != 'DOCK_STATION':
+            return
+        if msg.data == 'reached':
+            self.stop()
+            self.cargo_loader.start_loading(self.now_sec(), self.cargo_count)
+            self.state = 'LOAD_CARGO'
+            self.get_logger().info('Nav2 достиг клетки станции; ожидание груза.')
+        else:
+            self.station_retry_after[self.target_station_id] = self.now_sec() + 10.0
+            self.state = 'EXPLORE'
+            self.get_logger().warn('Nav2 не достиг станции; возврат к исследованию.')
+        self.state_pub.publish(String(data=self.state))
 
     def on_scan(self, msg: LaserScan):
         self.scan = msg
@@ -106,6 +133,7 @@ class Courier(Node):
 
     def on_image(self, msg: Image):
         self.image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        self.image_header = msg.header
 
     def on_cargo(self, msg: UInt8):
         if msg.data != self.cargo_count:
@@ -135,6 +163,62 @@ class Courier(Node):
         """Текущее симуляционное время в секундах."""
         return self.get_clock().now().nanoseconds / 1e9
 
+    def publish_status_marker(self):
+        marker = Marker()
+        marker.header.frame_id = 'base_link'
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = 'delivery_status'
+        marker.type = Marker.TEXT_VIEW_FACING
+        marker.pose.position.y = 1.3
+        marker.pose.position.z = 0.6
+        marker.pose.orientation.w = 1.0
+        marker.scale.z = 0.18
+        marker.color.r = marker.color.g = marker.color.b = marker.color.a = 1.0
+        station = self.target_station_id if self.target_station_id is not None else '-'
+        marker.text = (
+            f'{self.state}\nStation: {station} | Cargo: {self.cargo_count}\n'
+            f'{self.status_detail}'
+        )
+        self.status_marker_pub.publish(marker)
+
+    def remember_station_cell(self, detection):
+        if detection.marker_id not in (1, 2, 3) or detection.marker_id in self.station_cells:
+            return
+        rotation, _ = cv2.Rodrigues(detection.rvec)
+        inside = detection.tvec + 0.5 * rotation[:, 2]
+        point = PointStamped()
+        point.header = self.image_header
+        point.point.x, point.point.y, point.point.z = map(float, inside)
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                'maze_grid', point.header.frame_id,
+                rclpy.time.Time.from_msg(point.header.stamp),
+            )
+        except TransformException:
+            return
+        position = do_transform_point(point, transform).point
+        cell = int(math.floor(position.x / 2 + 0.5)), int(math.floor(position.y / 2 + 0.5))
+        self.station_cells[detection.marker_id] = cell
+        self.get_logger().info(f'Запомнена станция {detection.name}: клетка {cell}.')
+
+    def publish_station_markers(self):
+        markers = []
+        for station_id, cell in self.station_cells.items():
+            marker = Marker()
+            marker.header.frame_id = 'maze_grid'
+            marker.frame_locked = True
+            marker.ns = 'station_cells'
+            marker.id = station_id
+            marker.type = Marker.CUBE
+            marker.pose.position.x, marker.pose.position.y = float(2 * cell[0]), float(2 * cell[1])
+            marker.pose.position.z = 0.05
+            marker.pose.orientation.w = 1.0
+            marker.scale.x = marker.scale.y = 1.8
+            marker.scale.z = 0.02
+            marker.color.r, marker.color.g, marker.color.b, marker.color.a = 0.75, 0.2, 1.0, 0.5
+            markers.append(marker)
+        self.station_markers_pub.publish(MarkerArray(markers=markers))
+
     # ================================================================ лидар
 
     def sector_min(self, from_deg: float, to_deg: float) -> float:
@@ -159,18 +243,27 @@ class Courier(Node):
                 self.get_logger().info('Все датчики готовы — старт миссии доставки!')
                 self.set_tray(TRAY_DOWN)
                 self.state = 'EXPLORE'
+            self.publish_status_marker()
             return
 
         t = self.now_sec()
         yaw = self.pose[2]
         front_laser = self.sector_min(-15, 15)
         rear_laser = self.sector_min(160, 200)
+        self.status_detail = {
+            'EXPLORE': 'Exploring maze',
+            'NAV_TO_UNLOAD': 'Nav2: returning to start',
+            'DOCK_STATION': 'Nav2: approaching station cell',
+            'LOAD_CARGO': 'Waiting for cargo',
+            'MISSION_COMPLETE': 'Mission complete',
+        }.get(self.state, 'Starting docking')
 
         # 1. Компьютерное зрение: детекция станций, ламп и зоны выгрузки
         detections = self.detector.detect(self.image)
         status_dict = {}
 
         for det in detections:
+            self.remember_station_cell(det)
             prev = self.known_stations.get(det.marker_id)
             if prev is None or (det.state != StationState.UNKNOWN and prev.state == StationState.UNKNOWN):
                 self.known_stations[det.marker_id] = det
@@ -182,17 +275,21 @@ class Courier(Node):
                 'id': mid,
                 'state': det.state.value,
                 'distance': round(float(det.distance), 2),
+                'cell': self.station_cells.get(mid),
+                'collected': mid in self.collected_stations,
             }
         if status_dict:
             self.stations_status_pub.publish(String(data=json.dumps(status_dict, ensure_ascii=False)))
 
         active_stations = [
-            d for d in detections
-            if d.marker_id in (1, 2, 3)
+            d for d in self.known_stations.values()
+            if d.marker_id in self.station_cells
             and d.state == StationState.ACTIVE
+            and d.marker_id not in self.collected_stations
             and t >= self.station_retry_after.get(d.marker_id, 0.0)
         ]
         unload_markers = [d for d in detections if d.marker_id == 0]
+        self.publish_station_markers()
 
         # 2. Логика переходов FSM
         if self.state == 'EXPLORE':
@@ -204,56 +301,37 @@ class Courier(Node):
                     self.get_logger().info(f'На борту {self.cargo_count} груз(а). Направление в зону выгрузки (NAV_TO_UNLOAD).')
                     self.state = 'NAV_TO_UNLOAD'
             elif active_stations:
-                target = min(active_stations, key=lambda d: d.distance)
+                try:
+                    position = self.tf_buffer.lookup_transform(
+                        'maze_grid', 'base_link', rclpy.time.Time()
+                    ).transform.translation
+                except TransformException:
+                    return
+                target = min(active_stations, key=lambda d: math.dist(
+                    (position.x, position.y),
+                    tuple(2 * coordinate for coordinate in self.station_cells[d.marker_id]),
+                ))
                 self.target_station_id = target.marker_id
-                self.marker_last_seen = t
-                self.marker_visible = True
-                self.get_logger().info(
-                    f'Захвачена активная станция {target.name} (ID {target.marker_id}, d={target.distance:.2f}м). Переход к DOCK_STATION.'
-                )
+                cell = self.station_cells[target.marker_id]
+                self.station_target = PointStamped()
+                self.station_target.header.frame_id = 'maze_grid'
+                self.station_target.point.x = float(2 * cell[0])
+                self.station_target.point.y = float(2 * cell[1])
+                self.station_nav_started = t
                 self.state = 'DOCK_STATION'
+                self.get_logger().info(f'Станция {target.name}: Nav2 направляется к её клетке.')
+
+        elif self.state == 'DOCK_STATION':
+            if t - self.station_nav_started >= 45.0:
+                self.station_retry_after[self.target_station_id] = t + 10.0
+                self.state = 'EXPLORE'
+                self.get_logger().warn('Таймаут пути к станции (45 с); возврат к исследованию.')
 
         elif self.state == 'NAV_TO_UNLOAD':
             if unload_markers:
                 target = unload_markers[0]
                 self.get_logger().info(f'В поле зрения маркер выгрузки ArUco 0 (d={target.distance:.2f}м)! Переход к DOCK_UNLOAD.')
                 self.state = 'DOCK_UNLOAD'
-
-        elif self.state == 'DOCK_STATION':
-            det = next((d for d in detections if d.marker_id == self.target_station_id), None)
-            if det:
-                if not self.marker_visible:
-                    self.get_logger().info(f'Маркер станции {self.target_station_id} снова виден.')
-                self.marker_visible = True
-                self.marker_last_seen = t
-                res = compute_docking_cmd(det.tvec, self.dock_config, front_laser)
-                self.get_logger().info(
-                    f'Стыковка {det.marker_id}: d={det.distance:.2f} м, '
-                    f'ошибка дальности={res.dist_error:.2f} м, '
-                    f'угла={math.degrees(res.angle_error):.1f}°, '
-                    f'v={res.linear_vel:.2f}, w={res.angular_vel:.2f}, '
-                    f'лидар={front_laser:.2f} м, '
-                    f'стоп по лидару={front_laser < self.dock_config.min_safe_laser_dist and res.dist_error > 0}',
-                    throttle_duration_sec=1.0,
-                )
-                self.drive(res.linear_vel, res.angular_vel)
-                if res.is_docked:
-                    self.stop()
-                    self.cargo_loader.start_loading(t, self.cargo_count)
-                    self.state = 'LOAD_CARGO'
-                    self.get_logger().info(f'Стыковка со станцией {self.target_station_id} выполнена! Переход к LOAD_CARGO.')
-            else:
-                self.stop()
-                if self.marker_visible:
-                    self.get_logger().warn(f'Маркер станции {self.target_station_id} потерян; ожидание до 2 с.')
-                self.marker_visible = False
-                if t - self.marker_last_seen >= 2.0:
-                    self.station_retry_after[self.target_station_id] = t + 10.0
-                    self.get_logger().warn(
-                        f'Маркер станции {self.target_station_id} потерян на 2 с; '
-                        'возврат в EXPLORE, повторная попытка не раньше чем через 10 с.'
-                    )
-                    self.state = 'EXPLORE'
 
         elif self.state == 'LOAD_CARGO':
             self.stop()
@@ -264,6 +342,7 @@ class Courier(Node):
                 linear_vel=self.speed[0],
                 angular_vel=self.speed[1]
             )
+            self.status_detail = f'Loading: {res.status.value}\nStill for {res.dwell_time:.1f} s'
             self.get_logger().info(
                 f'Загрузка: статус={res.status.value}, покой={res.dwell_time:.1f} с, '
                 f'ожидание={t - self.cargo_loader.docked_timestamp:.1f} с, '
@@ -271,20 +350,30 @@ class Courier(Node):
                 throttle_duration_sec=1.0,
             )
             if res.status == LoadingStatus.SUCCESS:
+                self.collected_stations.add(self.target_station_id)
                 self.get_logger().info(f'Груз со станции {self.target_station_id} успешно получен! (На лотке: {self.cargo_count}). Переход к NAV_TO_UNLOAD.')
                 if self.target_station_id in self.known_stations:
                     self.known_stations[self.target_station_id].state = StationState.ISSUED
                 self.state = 'NAV_TO_UNLOAD'
             elif res.status == LoadingStatus.TIMEOUT:
+                self.station_retry_after[self.target_station_id] = t + 10.0
                 self.get_logger().warn(f'Таймаут погрузки со станции {self.target_station_id}. Возврат в EXPLORE.')
                 self.state = 'EXPLORE'
 
         elif self.state == 'DOCK_UNLOAD':
             det = next((d for d in detections if d.marker_id == 0), None)
             if det:
-                res = compute_docking_cmd(det.tvec, self.dock_config, front_laser)
+                offset = (0.0, 0.2, -0.2)[self.unload_count % 3]
+                rotation, _ = cv2.Rodrigues(det.rvec)
+                target = det.tvec + offset * rotation[:, 0]
+                res = compute_docking_cmd(target, self.dock_config, front_laser)
+                self.status_detail = (
+                    f'Unload position: {offset:+.2f} m along wall\n'
+                    f'd={det.distance:.2f} m | lidar={front_laser:.2f} m'
+                )
                 self.get_logger().info(
                     f'Стыковка выгрузки: d={det.distance:.2f} м, '
+                    f'позиция={self.unload_count + 1}, смещение вдоль стены={offset:+.2f} м, '
                     f'угол={math.degrees(res.angle_error):.1f}°, '
                     f'v={res.linear_vel:.2f}, w={res.angular_vel:.2f}, лидар={front_laser:.2f} м',
                     throttle_duration_sec=1.0,
@@ -296,6 +385,7 @@ class Courier(Node):
                     self.state = 'UNLOAD'
                     self.get_logger().info('Стыковка с зоной выгрузки завершена. Запуск цикла UNLOAD.')
             else:
+                self.status_detail = f'Unload marker lost | lidar={front_laser:.2f} m'
                 self.get_logger().warn(
                     f'Маркер выгрузки не виден; лидар={front_laser:.2f} м.',
                     throttle_duration_sec=1.0,
@@ -347,16 +437,21 @@ class Courier(Node):
             )
             self.drive(v, w)
             self.set_tray(tray_cmd)
+            self.status_detail = f'Unload: {phase_name}\nTray={self.tray_angle:.2f} rad | rear={rear_laser:.2f} m'
             if is_done:
                 self.stop()
                 self.set_tray(TRAY_DOWN)
-                self.get_logger().info('Выгрузка успешно завершена! Груз доставлен в зону (+25 баллов).')
+                self.unload_count += 1
+                self.get_logger().info(
+                    f'Манёвр выгрузки {self.unload_count} завершён; '
+                    f'на лотке осталось {self.cargo_count}. Зачёт доставки проверяет судья.'
+                )
                 remaining_active = [d for d in self.known_stations.values() if d.marker_id in (1, 2, 3) and d.state == StationState.ACTIVE]
-                if remaining_active or len(self.known_stations) < 3:
+                if remaining_active or not {1, 2, 3}.issubset(self.known_stations):
                     self.state = 'EXPLORE'
                 else:
                     self.state = 'MISSION_COMPLETE'
-                    self.get_logger().info('МИССИЯ ВЫПОЛНЕНА: Все грузы доставлены!')
+                    self.get_logger().info('Цикл доставки завершён; итоговый зачёт проверяет судья.')
 
         elif self.state == 'MISSION_COMPLETE':
             self.stop()
@@ -364,6 +459,9 @@ class Courier(Node):
 
         # 3. Публикация текущего состояния FSM для координации с навигатором
         self.state_pub.publish(String(data=self.state))
+        if self.state == 'DOCK_STATION':
+            self.station_target_pub.publish(self.station_target)
+        self.publish_status_marker()
 
         # 4. Визуализация и оверлей
         if self.image is not None:

@@ -215,6 +215,26 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /cell_explorer/markers
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Stations
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /delivery/station_markers
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Delivery status
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /delivery/status_marker
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
