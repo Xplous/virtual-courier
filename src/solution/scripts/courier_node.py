@@ -2,9 +2,11 @@
 """Узел курьера и доставки «Виртуальный курьер».
 
 Отвечает за:
-1. Обнаружение станций и зоны выгрузки по камере (ArUco + классификация состояния ламп).
-2. Контроль груза (/courier/cargo_count).
-3. Точный подъезд, загрузку и разгрузку (управление лотком /courier/tray_cmd).
+1. Детекцию станций и зоны выгрузки по камере (StationDetector: ArUco + сигнальные лампы).
+2. Прецизионную PBVS-стыковку к станциям и зоне выгрузки (DockingController).
+3. Приемку груза с контролем времени непрерывного покоя Dwell Time (CargoLoader).
+4. Выгрузку кубиков в зону у Старта с опрокидыванием кузова (UnloadController).
+5. Координацию состояний с глобальным навигатором через /delivery/state.
 """
 
 import json
@@ -12,12 +14,15 @@ import math
 import sys
 from pathlib import Path
 
-# Подключение локальных модулей
+# Подключение локальных модулей решения
 script_dir = Path(__file__).resolve().parent
 if str(script_dir) not in sys.path:
     sys.path.insert(0, str(script_dir))
 
-from station_detector import StationDetector, StationState
+from station_detector import StationDetector, StationState, StationDetection
+from docking_controller import DockingConfig, compute_docking_cmd
+from cargo_loader import CargoLoader, LoaderConfig, LoadingStatus
+from unload_controller import UnloadController
 
 import cv2
 import numpy as np
@@ -50,11 +55,16 @@ class Courier(Node):
         self.tray_angle = 0.0
         self.bridge = CvBridge()
 
-        # ---- модуль компьютерного зрения
+        # ---- компоненты подсистемы доставки
         self.detector = StationDetector()
+        self.dock_config = DockingConfig(target_dist=0.65, min_safe_laser_dist=0.28)
+        self.cargo_loader = CargoLoader(config=LoaderConfig(dwell_target=2.0))
+        self.unload_ctrl = UnloadController(target_rear_dist=0.35, min_safe_rear_dist=0.29)
 
         # Реестр обнаруженных станций {marker_id: StationDetection}
         self.known_stations = {}
+        self.target_station_id = None
+        self.state = 'WAIT_SENSORS'
 
         # ---- подписки
         self.create_subscription(LaserScan, '/scan', self.on_scan, qos_profile_sensor_data)
@@ -68,24 +78,24 @@ class Courier(Node):
         # ---- публикаторы
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.tray_pub = self.create_publisher(Float64, '/courier/tray_cmd', 10)
+        self.state_pub = self.create_publisher(String, '/delivery/state', 10)
         self.stations_status_pub = self.create_publisher(String, '/delivery/stations_status', 10)
 
-        self.state = 'WAIT_SENSORS'
         self.timer = self.create_timer(0.1, self.control_loop)   # 10 Гц
         self.get_logger().info('Courier (модуль доставки) запущен, ожидание сенсоров…')
 
-    # ================================================================ колбэки
+    # ================================================================ колбэки сенсоров
 
-    def on_scan(self, msg):
+    def on_scan(self, msg: LaserScan):
         self.scan = msg
 
-    def on_odom(self, msg):
+    def on_odom(self, msg: Odometry):
         p = msg.pose.pose
         yaw = 2.0 * math.atan2(p.orientation.z, p.orientation.w)
         self.pose = (p.position.x, p.position.y, yaw)
         self.speed = (msg.twist.twist.linear.x, msg.twist.twist.angular.z)
 
-    def on_imu(self, msg):
+    def on_imu(self, msg: Imu):
         self.imu = msg
 
     def on_camera_info(self, msg: CameraInfo):
@@ -102,9 +112,9 @@ class Courier(Node):
     def on_tray(self, msg: Float64):
         self.tray_angle = msg.data
 
-    # ================================================================ управление
+    # ================================================================ управление актуаторами
 
-    def drive(self, v, w):
+    def drive(self, v: float, w: float):
         """Задать линейную (м/с) и угловую (рад/с) скорость."""
         cmd = Twist()
         cmd.linear.x = float(v)
@@ -114,13 +124,17 @@ class Courier(Node):
     def stop(self):
         self.drive(0.0, 0.0)
 
-    def set_tray(self, angle):
+    def set_tray(self, angle: float):
         """Наклонить лоток: 0 — горизонтально, ~1.0 рад — выгрузка назад."""
         self.tray_pub.publish(Float64(data=float(angle)))
 
+    def now_sec(self) -> float:
+        """Текущее симуляционное время в секундах."""
+        return self.get_clock().now().nanoseconds / 1e9
+
     # ================================================================ лидар
 
-    def sector_min(self, from_deg, to_deg):
+    def sector_min(self, from_deg: float, to_deg: float) -> float:
         """Минимальная дальность лидара в секторе углов [from, to] (0° — вперёд, + — влево)."""
         s = self.scan
         if s is None:
@@ -134,35 +148,32 @@ class Courier(Node):
                 best = r
         return best
 
-    # ================================================================ основной цикл
+    # ================================================================ конечный автомат (FSM)
 
     def control_loop(self):
         if self.state == 'WAIT_SENSORS':
             if self.scan is not None and self.image is not None:
-                self.get_logger().info('Датчики готовы — старт работы модуля доставки.')
+                self.get_logger().info('Все датчики готовы — старт миссии доставки!')
                 self.set_tray(TRAY_DOWN)
                 self.state = 'EXPLORE'
             return
 
-        # 1. Компьютерное зрение: детекция станций и ламп
+        t = self.now_sec()
+        yaw = self.pose[2]
+        front_laser = self.sector_min(-15, 15)
+        rear_laser = self.sector_min(160, 200)
+
+        # 1. Компьютерное зрение: детекция станций, ламп и зоны выгрузки
         detections = self.detector.detect(self.image)
         status_dict = {}
 
         for det in detections:
-            # Обновляем реестр, если статус определился или это первое обнаружение
             prev = self.known_stations.get(det.marker_id)
             if prev is None or (det.state != StationState.UNKNOWN and prev.state == StationState.UNKNOWN):
                 self.known_stations[det.marker_id] = det
             elif det.state != StationState.UNKNOWN:
                 self.known_stations[det.marker_id] = det
 
-            self.get_logger().info(
-                f'Маркер {det.marker_id} ({det.name}): {det.state.value} | '
-                f'дист: {det.distance:.2f}м, conf: {det.confidence:.2f}',
-                throttle_duration_sec=2.0
-            )
-
-        # Публикуем текущее знание обо всех обнаруженных станциях
         for mid, det in self.known_stations.items():
             status_dict[det.name] = {
                 'id': mid,
@@ -172,15 +183,110 @@ class Courier(Node):
         if status_dict:
             self.stations_status_pub.publish(String(data=json.dumps(status_dict, ensure_ascii=False)))
 
-        # 2. Движение во время исследования:
-        # Управлением движением (SLAM + Nav2) сейчас занимается cell_explorer_node.py.
-        # Модуль доставки в состоянии EXPLORE работает в режиме пассивного наблюдения
-        # и публикации найденных станций в /delivery/stations_status.
-        # Перехват /cmd_vel доставка осуществляет только на этапе DOCKING/UNLOAD.
-        if self.state == 'EXPLORE':
-            pass
+        active_stations = [d for d in detections if d.marker_id in (1, 2, 3) and d.state == StationState.ACTIVE]
+        unload_markers = [d for d in detections if d.marker_id == 0]
 
-        # 3. Визуализация
+        # 2. Логика переходов FSM
+        if self.state == 'EXPLORE':
+            if self.cargo_count > 0:
+                if unload_markers:
+                    self.get_logger().info('Обнаружен маркер выгрузки ArUco 0! Переход к DOCK_UNLOAD.')
+                    self.state = 'DOCK_UNLOAD'
+                else:
+                    self.get_logger().info(f'На борту {self.cargo_count} груз(а). Направление в зону выгрузки (NAV_TO_UNLOAD).')
+                    self.state = 'NAV_TO_UNLOAD'
+            elif active_stations:
+                target = min(active_stations, key=lambda d: d.distance)
+                self.target_station_id = target.marker_id
+                self.get_logger().info(
+                    f'Захвачена активная станция {target.name} (ID {target.marker_id}, d={target.distance:.2f}м). Переход к DOCK_STATION.'
+                )
+                self.state = 'DOCK_STATION'
+
+        elif self.state == 'NAV_TO_UNLOAD':
+            if unload_markers:
+                target = unload_markers[0]
+                self.get_logger().info(f'В поле зрения маркер выгрузки ArUco 0 (d={target.distance:.2f}м)! Переход к DOCK_UNLOAD.')
+                self.state = 'DOCK_UNLOAD'
+
+        elif self.state == 'DOCK_STATION':
+            det = next((d for d in detections if d.marker_id == self.target_station_id), None)
+            if det:
+                res = compute_docking_cmd(det.tvec, self.dock_config, front_laser)
+                self.drive(res.linear_vel, res.angular_vel)
+                if res.is_docked:
+                    self.stop()
+                    self.cargo_loader.start_loading(t, self.cargo_count)
+                    self.state = 'LOAD_CARGO'
+                    self.get_logger().info(f'Стыковка со станцией {self.target_station_id} выполнена! Переход к LOAD_CARGO.')
+            else:
+                self.stop()
+
+        elif self.state == 'LOAD_CARGO':
+            self.stop()
+            self.set_tray(TRAY_DOWN)
+            res = self.cargo_loader.update(
+                current_time=t,
+                current_cargo_count=self.cargo_count,
+                linear_vel=self.speed[0],
+                angular_vel=self.speed[1]
+            )
+            if res.status == LoadingStatus.SUCCESS:
+                self.get_logger().info(f'Груз со станции {self.target_station_id} успешно получен! (На лотке: {self.cargo_count}). Переход к NAV_TO_UNLOAD.')
+                if self.target_station_id in self.known_stations:
+                    self.known_stations[self.target_station_id].state = StationState.ISSUED
+                self.state = 'NAV_TO_UNLOAD'
+            elif res.status == LoadingStatus.TIMEOUT:
+                self.get_logger().warn(f'Таймаут погрузки со станции {self.target_station_id}. Возврат в EXPLORE.')
+                self.state = 'EXPLORE'
+
+        elif self.state == 'DOCK_UNLOAD':
+            det = next((d for d in detections if d.marker_id == 0), None)
+            if det:
+                res = compute_docking_cmd(det.tvec, self.dock_config, front_laser)
+                self.drive(res.linear_vel, res.angular_vel)
+                if res.is_docked or front_laser <= 0.38:
+                    self.stop()
+                    self.unload_ctrl.start(t, yaw)
+                    self.state = 'UNLOAD'
+                    self.get_logger().info('Стыковка с зоной выгрузки завершена. Запуск цикла UNLOAD.')
+            else:
+                if front_laser <= 0.40:
+                    self.stop()
+                    self.unload_ctrl.start(t, yaw)
+                    self.state = 'UNLOAD'
+                else:
+                    self.drive(0.12, 0.0)
+
+        elif self.state == 'UNLOAD':
+            v, w, tray_cmd, is_done, phase_name = self.unload_ctrl.step(
+                current_time=t,
+                current_yaw=yaw,
+                rear_lidar_dist=rear_laser,
+                cargo_count=self.cargo_count,
+                tray_angle=self.tray_angle
+            )
+            self.drive(v, w)
+            self.set_tray(tray_cmd)
+            if is_done:
+                self.stop()
+                self.set_tray(TRAY_DOWN)
+                self.get_logger().info('Выгрузка успешно завершена! Груз доставлен в зону (+25 баллов).')
+                remaining_active = [d for d in self.known_stations.values() if d.marker_id in (1, 2, 3) and d.state == StationState.ACTIVE]
+                if remaining_active or len(self.known_stations) < 3:
+                    self.state = 'EXPLORE'
+                else:
+                    self.state = 'MISSION_COMPLETE'
+                    self.get_logger().info('МИССИЯ ВЫПОЛНЕНА: Все грузы доставлены!')
+
+        elif self.state == 'MISSION_COMPLETE':
+            self.stop()
+            self.set_tray(TRAY_DOWN)
+
+        # 3. Публикация текущего состояния FSM для координации с навигатором
+        self.state_pub.publish(String(data=self.state))
+
+        # 4. Визуализация и оверлей
         if self.image is not None:
             view = self.detector.draw_detections(self.image, detections)
             cv2.putText(
@@ -192,7 +298,6 @@ class Courier(Node):
                 (0, 0, 255),
                 2,
             )
-            # Сохраняем текущий кадр на диск — его можно открыть прямо в VS Code
             cv2.imwrite('/ros_ws/src/solution/camera_view.jpg', view)
 
             if self.gui:
