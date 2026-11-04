@@ -8,6 +8,7 @@ install(PROGRAMS
   scripts/courier_node.py
   scripts/station_detector.py
   scripts/docking_controller.py
+  scripts/cargo_loader.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
