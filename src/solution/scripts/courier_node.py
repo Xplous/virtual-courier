@@ -172,16 +172,13 @@ class Courier(Node):
         if status_dict:
             self.stations_status_pub.publish(String(data=json.dumps(status_dict, ensure_ascii=False)))
 
-        # 2. Движение: временный базовый объезд препятствий (до интеграции с Nav2/explorer)
+        # 2. Движение во время исследования:
+        # Управлением движением (SLAM + Nav2) сейчас занимается cell_explorer_node.py.
+        # Модуль доставки в состоянии EXPLORE работает в режиме пассивного наблюдения
+        # и публикации найденных станций в /delivery/stations_status.
+        # Перехват /cmd_vel доставка осуществляет только на этапе DOCKING/UNLOAD.
         if self.state == 'EXPLORE':
-            front = self.sector_min(-25, 25)
-            left = self.sector_min(30, 90)
-            right = self.sector_min(-90, -30)
-            if front < 0.45:
-                self.drive(0.0, 1.2 if left > right else -1.2)
-            else:
-                steer = max(-0.8, min(0.8, 0.8 * (min(left, 2.0) - min(right, 2.0))))
-                self.drive(0.35, steer)
+            pass
 
         # 3. Визуализация
         if self.image is not None:
