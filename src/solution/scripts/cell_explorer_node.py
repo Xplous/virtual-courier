@@ -134,17 +134,19 @@ class CellExplorer(MazeGrid):
         self.delivery_state = "EXPLORE"
         self.start_point = None
         self.station_cell = None
-        self.station_result = self.create_publisher(String, '/delivery/navigation_result', 10)
-        self.create_subscription(PointStamped, '/delivery/station_target', self.on_station_target, 10)
-        self.create_subscription(
-            String, "/delivery/state", self.on_delivery_state, 10
+        self.station_result = self.create_publisher(
+            String, "/delivery/navigation_result", 10
         )
+        self.create_subscription(
+            PointStamped, "/delivery/station_target", self.on_station_target, 10
+        )
+        self.create_subscription(String, "/delivery/state", self.on_delivery_state, 10)
         self.create_timer(self.param("update_period"), self.tick)
 
     def on_delivery_state(self, msg: String):
         if msg.data == self.delivery_state:
             return
-        self.get_logger().info(f'Доставка: {self.delivery_state} -> {msg.data}')
+        self.get_logger().info(f"Доставка: {self.delivery_state} -> {msg.data}")
         self.delivery_state = msg.data
         self.station_cell = None
         self.evaluation = None
@@ -156,18 +158,22 @@ class CellExplorer(MazeGrid):
         self.active = None
 
     def on_station_target(self, msg):
-        if self.delivery_state != 'DOCK_STATION' or self.station_cell is not None or not self.fitted:
+        if (
+            self.delivery_state != "DOCK_STATION"
+            or self.station_cell is not None
+            or not self.fitted
+        ):
             return
         try:
             transform = self.buffer.lookup_transform(
-                'map', msg.header.frame_id, rclpy.time.Time.from_msg(msg.header.stamp)
+                "map", msg.header.frame_id, rclpy.time.Time.from_msg(msg.header.stamp)
             )
         except TransformException:
             return
         point = do_transform_point(msg, transform).point
         local = (np.array([point.x, point.y]) - self.grid_origin) @ self.grid_rotation
         self.station_cell = tuple(np.floor(local / 2 + 0.5).astype(int))
-        self.get_logger().info(f'Клетка станции: {self.station_cell}')
+        self.get_logger().info(f"Клетка станции: {self.station_cell}")
 
     def param(self, name):
         return self.get_parameter(name).value
@@ -239,18 +245,24 @@ class CellExplorer(MazeGrid):
         if self.start_point is None:
             self.start_point = (self.position[0], self.position[1])
 
-        if self.delivery_state == 'DOCK_STATION':
+        if self.delivery_state == "DOCK_STATION":
             if self.station_cell is None or self.active is not None:
                 return
             point = self.free_point(self.station_cell)
             if point is None:
-                self.station_result.publish(String(data='failed'))
+                self.station_result.publish(String(data="failed"))
                 return
-            self.send_navigation(dict(
-                cell=self.station_cell, probe=None, point=point,
-                key=(self.station_cell, 'station'), cost=0.0,
-                length=math.dist(self.position, point), is_station=True,
-            ))
+            self.send_navigation(
+                dict(
+                    cell=self.station_cell,
+                    probe=None,
+                    point=point,
+                    key=(self.station_cell, "station"),
+                    cost=0.0,
+                    length=math.dist(self.position, point),
+                    is_station=True,
+                )
+            )
             return
 
         if self.delivery_state == "NAV_TO_UNLOAD":
@@ -491,8 +503,8 @@ class CellExplorer(MazeGrid):
             if not handle.accepted:
                 self.get_logger().warn(f'Nav2 отклонил цель {candidate["cell"]}.')
                 self.active = None
-                if candidate.get('is_station'):
-                    self.station_result.publish(String(data='failed'))
+                if candidate.get("is_station"):
+                    self.station_result.publish(String(data="failed"))
                 return
             self.get_logger().info(f'Nav2 принял цель {candidate["cell"]}.')
             self.nav_handle = handle
@@ -502,10 +514,14 @@ class CellExplorer(MazeGrid):
             if generation != self.nav_generation:
                 return
             status = f.result().status
-            label = {4: "достигнута", 5: "отменена", 6: "ошибка"}.get(status, str(status))
+            label = {4: "достигнута", 5: "отменена", 6: "ошибка"}.get(
+                status, str(status)
+            )
             self.get_logger().info(f'Nav2: цель {candidate["cell"]} — {label}.')
-            if candidate.get('is_station'):
-                self.station_result.publish(String(data='reached' if status == 4 else 'failed'))
+            if candidate.get("is_station"):
+                self.station_result.publish(
+                    String(data="reached" if status == 4 else "failed")
+                )
             if f.result().status == 4 and candidate["probe"]:
                 self.inspected.add(candidate["key"])
             elif f.result().status != 4:
