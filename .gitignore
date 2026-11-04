@@ -1,6 +1,7 @@
 results/
 eval_work/
 playground-vaniog/
+playground-delivery/
 src/solution/build/
 src/solution/install/
 src/solution/log/
@@ -10,3 +11,7 @@ scene/webots/worlds/.*.wbproj
 __pycache__/
 *.pyc
 .vscode/
+.env
+docker-compose.override.yaml
+camera_view.jpg
+src/solution/camera_view.jpg

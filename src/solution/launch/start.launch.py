@@ -81,6 +81,13 @@ def generate_launch_description():
                 parameters=[os.path.join(pkg, "config", "cell_explorer.yaml")],
             ),
             Node(
+                package="solution",
+                executable="courier_node.py",
+                name="courier",
+                output="screen",
+                parameters=[{"use_sim_time": True, "gui": LaunchConfiguration("gui")}],
+            ),
+            Node(
                 package="rviz2",
                 executable="rviz2",
                 output="screen",

@@ -11,7 +11,7 @@ from geometry_msgs.msg import Point, PoseStamped
 from nav2_msgs.action import ComputePathToPose, NavigateToPose
 from rclpy.action import ActionClient
 from tf2_ros import Buffer, TransformException, TransformListener
-from std_msgs.msg import ColorRGBA
+from std_msgs.msg import ColorRGBA, String
 from visualization_msgs.msg import Marker, MarkerArray
 
 from maze_grid_node import MazeGrid
@@ -130,7 +130,46 @@ class CellExplorer(MazeGrid):
         )
         self.navigator = ActionClient(self, NavigateToPose, "/navigate_to_pose")
         self.markers = self.create_publisher(MarkerArray, "/cell_explorer/markers", 10)
+        self.delivery_state = "EXPLORE"
+        self.start_point = None
+        self.create_subscription(
+            String, "/delivery/state", self.on_delivery_state, 10
+        )
         self.create_timer(self.param("update_period"), self.tick)
+
+    def on_delivery_state(self, msg: String):
+        prev = self.delivery_state
+        self.delivery_state = msg.data
+        if prev != self.delivery_state:
+            self.get_logger().info(
+                f"[Explorer] Состояние доставки: {prev} -> {self.delivery_state}"
+            )
+            if self.delivery_state in (
+                "DOCK_STATION",
+                "LOAD_CARGO",
+                "DOCK_UNLOAD",
+                "UNLOAD",
+                "MISSION_COMPLETE",
+            ):
+                self.evaluation = None
+                self.request_id += 1
+                if self.nav_handle is not None:
+                    self.get_logger().info(
+                        "[Explorer] Отмена активной навигации: приоритет у контроллера доставки."
+                    )
+                    self.nav_handle.cancel_goal_async()
+                    self.nav_handle = None
+                    self.active = None
+            elif self.delivery_state == "NAV_TO_UNLOAD":
+                self.evaluation = None
+                self.request_id += 1
+                if self.nav_handle is not None:
+                    self.get_logger().info(
+                        "[Explorer] Перенаправление навигации в зону разгрузки (Старт)."
+                    )
+                    self.nav_handle.cancel_goal_async()
+                    self.nav_handle = None
+                    self.active = None
 
     def param(self, name):
         return self.get_parameter(name).value
@@ -165,6 +204,19 @@ class CellExplorer(MazeGrid):
         return float(best[0]), float(best[1])
 
     def tick(self):
+        if self.delivery_state in (
+            "DOCK_STATION",
+            "LOAD_CARGO",
+            "DOCK_UNLOAD",
+            "UNLOAD",
+            "MISSION_COMPLETE",
+        ):
+            if self.nav_handle is not None:
+                self.nav_handle.cancel_goal_async()
+                self.nav_handle = None
+                self.active = None
+            return
+
         if self.evaluation is not None:
             if time.monotonic() - self.request_started > self.param("path_timeout"):
                 self.request_id += 1
@@ -187,6 +239,34 @@ class CellExplorer(MazeGrid):
         self.yaw = math.atan2(
             2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z)
         )
+        if self.start_point is None:
+            self.start_point = (self.position[0], self.position[1])
+
+        if self.delivery_state == "NAV_TO_UNLOAD":
+            if self.active is not None and self.active.get("is_home"):
+                return
+            target_point = None
+            if self.start_cell is not None:
+                target_point = self.free_point(self.start_cell)
+            if target_point is None and self.start_point is not None:
+                target_point = self.start_point
+            if target_point is not None:
+                home_candidate = dict(
+                    cell=self.start_cell if self.start_cell is not None else (0, 0),
+                    probe=None,
+                    point=target_point,
+                    key=(self.start_cell, "home"),
+                    cost=0.0,
+                    length=math.dist(self.position, target_point),
+                    perimeter=0.0,
+                    is_home=True,
+                )
+                self.get_logger().info(
+                    f"[Explorer] Навигация на базу выгрузки: старт {self.start_cell}, цель {target_point}"
+                )
+                self.send_navigation(home_candidate)
+            return
+
         local = (np.asarray(self.position) - self.grid_origin) @ self.grid_rotation
         current = tuple(np.floor(local / 2 + 0.5).astype(int))
         if np.max(np.abs(local - 2 * np.asarray(current))) <= 0.8:
