@@ -9,6 +9,7 @@ install(PROGRAMS
   scripts/station_detector.py
   scripts/docking_controller.py
   scripts/cargo_loader.py
+  scripts/unload_controller.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
