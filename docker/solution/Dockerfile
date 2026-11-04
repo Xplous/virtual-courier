@@ -16,6 +16,7 @@ RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
       ros-humble-navigation2 \
       ros-humble-diagnostic-updater \
       ros-humble-nav2-bringup \
+      ros-humble-nav2-mppi-controller \
       ros-humble-slam-toolbox \
       ros-humble-cv-bridge \
       ros-humble-rmw-fastrtps-cpp \
