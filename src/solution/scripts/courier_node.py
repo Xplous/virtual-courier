@@ -64,6 +64,9 @@ class Courier(Node):
         # Реестр обнаруженных станций {marker_id: StationDetection}
         self.known_stations = {}
         self.target_station_id = None
+        self.marker_last_seen = None
+        self.station_retry_after = {}
+        self.marker_visible = True
         self.state = 'WAIT_SENSORS'
 
         # ---- подписки
@@ -183,7 +186,12 @@ class Courier(Node):
         if status_dict:
             self.stations_status_pub.publish(String(data=json.dumps(status_dict, ensure_ascii=False)))
 
-        active_stations = [d for d in detections if d.marker_id in (1, 2, 3) and d.state == StationState.ACTIVE]
+        active_stations = [
+            d for d in detections
+            if d.marker_id in (1, 2, 3)
+            and d.state == StationState.ACTIVE
+            and t >= self.station_retry_after.get(d.marker_id, 0.0)
+        ]
         unload_markers = [d for d in detections if d.marker_id == 0]
 
         # 2. Логика переходов FSM
@@ -198,6 +206,8 @@ class Courier(Node):
             elif active_stations:
                 target = min(active_stations, key=lambda d: d.distance)
                 self.target_station_id = target.marker_id
+                self.marker_last_seen = t
+                self.marker_visible = True
                 self.get_logger().info(
                     f'Захвачена активная станция {target.name} (ID {target.marker_id}, d={target.distance:.2f}м). Переход к DOCK_STATION.'
                 )
@@ -212,7 +222,20 @@ class Courier(Node):
         elif self.state == 'DOCK_STATION':
             det = next((d for d in detections if d.marker_id == self.target_station_id), None)
             if det:
+                if not self.marker_visible:
+                    self.get_logger().info(f'Маркер станции {self.target_station_id} снова виден.')
+                self.marker_visible = True
+                self.marker_last_seen = t
                 res = compute_docking_cmd(det.tvec, self.dock_config, front_laser)
+                self.get_logger().info(
+                    f'Стыковка {det.marker_id}: d={det.distance:.2f} м, '
+                    f'ошибка дальности={res.dist_error:.2f} м, '
+                    f'угла={math.degrees(res.angle_error):.1f}°, '
+                    f'v={res.linear_vel:.2f}, w={res.angular_vel:.2f}, '
+                    f'лидар={front_laser:.2f} м, '
+                    f'стоп по лидару={front_laser < self.dock_config.min_safe_laser_dist and res.dist_error > 0}',
+                    throttle_duration_sec=1.0,
+                )
                 self.drive(res.linear_vel, res.angular_vel)
                 if res.is_docked:
                     self.stop()
@@ -221,6 +244,16 @@ class Courier(Node):
                     self.get_logger().info(f'Стыковка со станцией {self.target_station_id} выполнена! Переход к LOAD_CARGO.')
             else:
                 self.stop()
+                if self.marker_visible:
+                    self.get_logger().warn(f'Маркер станции {self.target_station_id} потерян; ожидание до 2 с.')
+                self.marker_visible = False
+                if t - self.marker_last_seen >= 2.0:
+                    self.station_retry_after[self.target_station_id] = t + 10.0
+                    self.get_logger().warn(
+                        f'Маркер станции {self.target_station_id} потерян на 2 с; '
+                        'возврат в EXPLORE, повторная попытка не раньше чем через 10 с.'
+                    )
+                    self.state = 'EXPLORE'
 
         elif self.state == 'LOAD_CARGO':
             self.stop()
@@ -230,6 +263,12 @@ class Courier(Node):
                 current_cargo_count=self.cargo_count,
                 linear_vel=self.speed[0],
                 angular_vel=self.speed[1]
+            )
+            self.get_logger().info(
+                f'Загрузка: статус={res.status.value}, покой={res.dwell_time:.1f} с, '
+                f'ожидание={t - self.cargo_loader.docked_timestamp:.1f} с, '
+                f'груз={self.cargo_count}, v={self.speed[0]:.3f}, w={self.speed[1]:.3f}',
+                throttle_duration_sec=1.0,
             )
             if res.status == LoadingStatus.SUCCESS:
                 self.get_logger().info(f'Груз со станции {self.target_station_id} успешно получен! (На лотке: {self.cargo_count}). Переход к NAV_TO_UNLOAD.')
@@ -244,6 +283,12 @@ class Courier(Node):
             det = next((d for d in detections if d.marker_id == 0), None)
             if det:
                 res = compute_docking_cmd(det.tvec, self.dock_config, front_laser)
+                self.get_logger().info(
+                    f'Стыковка выгрузки: d={det.distance:.2f} м, '
+                    f'угол={math.degrees(res.angle_error):.1f}°, '
+                    f'v={res.linear_vel:.2f}, w={res.angular_vel:.2f}, лидар={front_laser:.2f} м',
+                    throttle_duration_sec=1.0,
+                )
                 self.drive(res.linear_vel, res.angular_vel)
                 if res.is_docked or front_laser <= 0.38:
                     self.stop()
@@ -251,6 +296,10 @@ class Courier(Node):
                     self.state = 'UNLOAD'
                     self.get_logger().info('Стыковка с зоной выгрузки завершена. Запуск цикла UNLOAD.')
             else:
+                self.get_logger().warn(
+                    f'Маркер выгрузки не виден; лидар={front_laser:.2f} м.',
+                    throttle_duration_sec=1.0,
+                )
                 if front_laser <= 0.40:
                     self.stop()
                     self.unload_ctrl.start(t, yaw)
@@ -259,12 +308,42 @@ class Courier(Node):
                     self.drive(0.12, 0.0)
 
         elif self.state == 'UNLOAD':
+            previous_phase = self.unload_ctrl.state
+            phase_elapsed = t - self.unload_ctrl.phase_start_time
+            yaw_error = self.unload_ctrl.target_yaw - yaw
+            yaw_error = math.atan2(math.sin(yaw_error), math.cos(yaw_error))
+            phase_ready = {
+                'TURN_180': abs(yaw_error) <= self.unload_ctrl.turn_tolerance,
+                'BACKUP': rear_laser <= self.unload_ctrl.target_rear_dist,
+                'TILT_UP': self.tray_angle >= 0.85 * self.unload_ctrl.tray_unload_angle,
+                'WAIT_EMPTY': (
+                    self.cargo_count == 0
+                    and self.unload_ctrl.settle_start_time is not None
+                    and t - self.unload_ctrl.settle_start_time >= self.unload_ctrl.settle_dwell_time
+                ),
+                'TILT_DOWN': self.tray_angle <= 0.08,
+                'CLEAR_FORWARD': phase_elapsed >= self.unload_ctrl.forward_duration,
+            }
             v, w, tray_cmd, is_done, phase_name = self.unload_ctrl.step(
                 current_time=t,
                 current_yaw=yaw,
                 rear_lidar_dist=rear_laser,
                 cargo_count=self.cargo_count,
                 tray_angle=self.tray_angle
+            )
+            if phase_name != previous_phase:
+                timed_out = not phase_ready[previous_phase]
+                self.get_logger().info(
+                    f'Выгрузка {previous_phase} -> {phase_name}: '
+                    f'{"таймаут" if timed_out else "условие выполнено"}, '
+                    f'прошло {phase_elapsed:.1f} с, груз={self.cargo_count}, '
+                    f'кузов={self.tray_angle:.2f}, задний лидар={rear_laser:.2f} м.'
+                )
+            self.get_logger().info(
+                f'Выгрузка: фаза={phase_name}, груз={self.cargo_count}, '
+                f'кузов={self.tray_angle:.2f}, задний лидар={rear_laser:.2f} м, '
+                f'v={v:.2f}, w={w:.2f}',
+                throttle_duration_sec=1.0,
             )
             self.drive(v, w)
             self.set_tray(tray_cmd)

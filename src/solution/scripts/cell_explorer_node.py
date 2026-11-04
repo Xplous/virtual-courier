@@ -483,14 +483,19 @@ class CellExplorer(MazeGrid):
                     handle.cancel_goal_async()
                 return
             if not handle.accepted:
+                self.get_logger().warn(f'Nav2 отклонил цель {candidate["cell"]}.')
                 self.active = None
                 return
+            self.get_logger().info(f'Nav2 принял цель {candidate["cell"]}.')
             self.nav_handle = handle
             handle.get_result_async().add_done_callback(done)
 
         def done(f):
             if generation != self.nav_generation:
                 return
+            status = f.result().status
+            label = {4: "достигнута", 5: "отменена", 6: "ошибка"}.get(status, str(status))
+            self.get_logger().info(f'Nav2: цель {candidate["cell"]} — {label}.')
             if f.result().status == 4 and candidate["probe"]:
                 self.inspected.add(candidate["key"])
             elif f.result().status != 4:
