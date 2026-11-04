@@ -9,3 +9,6 @@ scene/webots/worlds/.*.wbproj
 __pycache__/
 *.pyc
 .vscode/
+.env
+camera_view.jpg
+src/solution/camera_view.jpg

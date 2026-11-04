@@ -15,6 +15,7 @@ install(TARGETS example_cpp DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS
   scripts/courier_node.py
   scripts/explorer_node.py
+  scripts/station_detector.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
