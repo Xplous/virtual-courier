@@ -236,7 +236,7 @@ class Courier(Node):
             transform = self.tf_buffer.lookup_transform(
                 "maze_grid",
                 point.header.frame_id,
-                rclpy.time.Time(),
+                rclpy.time.Time.from_msg(point.header.stamp),
             )
         except TransformException:
             return
@@ -379,7 +379,9 @@ class Courier(Node):
                 for d in detections
                 if d.marker_id in (1, 2, 3)
                 and d.marker_id not in self.collected_stations
-                and d.distance < 0.85
+                and self.known_stations[d.marker_id].state == StationState.ACTIVE
+                and t >= self.station_retry_after.get(d.marker_id, 0.0)
+                and 0.15 < d.distance < 0.85
             ),
             None,
         )
@@ -389,7 +391,7 @@ class Courier(Node):
             self.cargo_loader.start_loading(t, self.cargo_count)
             self.state = "LOAD_CARGO"
             self.get_logger().info(
-                f"[INSTANT CARGO LOAD] Маркер станции {close_station.name} прямо перед роботом (d={close_station.distance:.2f}м < 0.85м). Запуск LOAD_CARGO!"
+                f"Станция {close_station.name} рядом ({close_station.distance:.2f} м); ожидание груза."
             )
 
         if self.state == "EXPLORE":
@@ -463,25 +465,20 @@ class Courier(Node):
                 )
 
         elif self.state == "NAV_TO_UNLOAD":
-            det_0 = next((d for d in detections if d.marker_id == 0), None)
             try:
                 pos = self.tf_buffer.lookup_transform(
                     "maze_grid", "base_link", rclpy.time.Time()
                 ).transform.translation
-                in_start_zone = (pos.x <= 1.8 and pos.y <= 1.8)
+                in_start_zone = abs(pos.x) < 0.8 and abs(pos.y) < 0.8
             except TransformException:
                 in_start_zone = False
 
-            if det_0 and (det_0.distance < 1.5 or in_start_zone):
+            if in_start_zone:
                 self.stop()
                 self.get_logger().info(
-                    f"Маркер выгрузки ArUco 0 обнаружен (d={det_0.distance:.2f}м, в зоне старта={in_start_zone}). Переход к DOCK_UNLOAD."
+                    "Робот в стартовой клетке; переход к стыковке выгрузки."
                 )
                 self.state = "DOCK_UNLOAD"
-            elif in_start_zone and det_0 is None:
-                # В зоне старта, но маркер ArUco 0 не в кадре — плавно вращаемся для поиска маркера
-                self.drive(0.0, 0.4)
-                self.status_detail = "In start zone: scanning for ArUco 0 marker"
 
         elif self.state == "LOAD_CARGO":
             self.set_tray(TRAY_DOWN)
