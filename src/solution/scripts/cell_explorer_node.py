@@ -159,11 +159,7 @@ class CellExplorer(MazeGrid):
         self.active = None
 
     def on_station_target(self, msg):
-        if (
-            self.delivery_state != "DOCK_STATION"
-            or self.station_cell is not None
-            or not self.fitted
-        ):
+        if self.delivery_state != "DOCK_STATION" or not self.fitted:
             return
         try:
             transform = self.buffer.lookup_transform(
@@ -173,7 +169,14 @@ class CellExplorer(MazeGrid):
             return
         point = do_transform_point(msg, transform).point
         local = (np.array([point.x, point.y]) - self.grid_origin) @ self.grid_rotation
-        self.station_cell = tuple(np.floor(local / 2 + 0.5).astype(int))
+        cell = tuple(np.floor(local / 2 + 0.5).astype(int))
+        if cell == self.station_cell:
+            return
+        self.station_cell = cell
+        self.nav_generation += 1
+        if self.nav_handle is not None:
+            self.nav_handle.cancel_goal_async()
+        self.active = self.nav_handle = None
         self.get_logger().info(f"Клетка станции: {self.station_cell}")
 
     def param(self, name):

@@ -588,6 +588,9 @@ class Courier(Node):
         # 3. Публикация текущего состояния FSM для координации с навигатором
         self.state_pub.publish(String(data=self.state))
         if self.state == "DOCK_STATION":
+            cell = self.station_cells[self.target_station_id]
+            self.station_target.point.x = float(2 * cell[0])
+            self.station_target.point.y = float(2 * cell[1])
             self.station_target_pub.publish(self.station_target)
         self.publish_status_marker()
 
