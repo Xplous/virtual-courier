@@ -275,7 +275,7 @@ class CellExplorer(MazeGrid):
                 self.request_id += 1
                 self.request_next()
             return
-        if not self.fitted:
+        if not hasattr(self, "clearances"):
             return
         if not self.planner.server_is_ready():
             self.get_logger().warn(
@@ -302,6 +302,16 @@ class CellExplorer(MazeGrid):
         )
         if self.start_point is None:
             self.start_point = (self.position[0], self.position[1])
+
+        if not self.fitted and self.delivery_state == "EXPLORE":
+            self.bootstrap_navigation()
+            return
+        if self.fitted and self.start_cell is None:
+            start = (
+                np.asarray(self.start_point) - self.grid_origin
+            ) @ self.grid_rotation
+            self.start_cell = tuple(np.floor(start / 2 + 0.5).astype(int))
+            self.visited.add(self.start_cell)
 
         if self.delivery_state == "DOCK_STATION":
             if self.station_cell is None or self.active is not None:
@@ -351,8 +361,6 @@ class CellExplorer(MazeGrid):
         current = tuple(np.floor(local / 2 + 0.5).astype(int))
         if np.max(np.abs(local - 2 * np.asarray(current))) <= 0.8:
             if current not in self.visited:
-                if self.start_cell is None:
-                    self.start_cell = current
                 self.visited.add(current)
                 self.get_logger().info(
                     f"Посещена клетка {current}; всего {len(self.visited)}"
@@ -432,6 +440,62 @@ class CellExplorer(MazeGrid):
             queue=deque(candidates), valid=[], position=self.position, yaw=self.yaw
         )
         self.request_next()
+
+    def bootstrap_navigation(self):
+        if self.active is not None:
+            return
+        clearance = self.param("clearance")
+        yy, xx = np.nonzero(self.clearances >= clearance)
+        world = (
+            np.column_stack((xx, yy)) + 0.5
+        ) * self.resolution @ self.map_rotation.T + self.map_origin
+        delta = world - self.position
+        distance = np.linalg.norm(delta, axis=1)
+        angle = np.arctan2(delta[:, 1], delta[:, 0]) - self.yaw
+        turn = np.abs(np.arctan2(np.sin(angle), np.cos(angle)))
+        valid = np.flatnonzero((distance >= 0.4) & (distance <= 0.8))
+        order = valid[np.argsort(-(distance[valid] - 0.2 * turn[valid]))]
+        for index in order:
+            point = tuple(map(float, world[index]))
+            key = ("bootstrap", round(point[0], 1), round(point[1], 1))
+            if self.retry_after.get(key, 0) > time.monotonic():
+                continue
+            line = np.linspace(
+                self.position, point, int(distance[index] / self.resolution) + 2
+            )
+            pixels = np.floor(
+                (line - self.map_origin) @ self.map_rotation / self.resolution
+            ).astype(int)
+            if not np.all(
+                (pixels[:, 0] >= 0)
+                & (pixels[:, 0] < self.cells.shape[1])
+                & (pixels[:, 1] >= 0)
+                & (pixels[:, 1] < self.cells.shape[0])
+            ):
+                continue
+            if np.any(self.clearances[pixels[:, 1], pixels[:, 0]] < clearance):
+                continue
+            candidate = dict(
+                cell=(0, 0),
+                probe=None,
+                point=point,
+                key=key,
+                cost=float(distance[index]),
+                length=float(distance[index]),
+                perimeter=0.0,
+            )
+            self.get_logger().info(
+                "Старт без привязки сетки: короткая цель по свободной карте."
+            )
+            self.evaluation = dict(
+                queue=deque([candidate]), valid=[], position=self.position, yaw=self.yaw
+            )
+            self.request_next()
+            return
+        self.get_logger().warn(
+            "Нет безопасной стартовой цели в видимой области.",
+            throttle_duration_sec=5.0,
+        )
 
     def pose_message(self, point):
         pose = PoseStamped()
