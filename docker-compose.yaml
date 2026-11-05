@@ -19,7 +19,7 @@ services:
       <<: *ros-env
       WEBOTS_GUI: ${WEBOTS_GUI:-true}
       WEBOTS_MODE: ${WEBOTS_MODE:-realtime}
-      SCENARIO: /scenarios/${SCENARIO:-public_1}.yaml
+      SCENARIO: /scenarios/${SCENARIO:-hard_52332}.yaml
       VC_TEAM: ${VC_TEAM:-local}
     ipc: host
     network_mode: host

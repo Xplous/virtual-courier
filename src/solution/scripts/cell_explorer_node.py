@@ -110,7 +110,7 @@ class CellExplorer(MazeGrid):
             clearance=0.25,
             retry_delay=10.0,
             maze_cells=8,
-            perimeter_weight=2.0,
+            perimeter_weight=4.0,
         )
         for name, value in defaults.items():
             self.declare_parameter(name, value)

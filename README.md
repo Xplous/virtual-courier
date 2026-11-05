@@ -5,7 +5,9 @@ ROS 2 Humble, Webots, SLAM Toolbox и Nav2/MPPI. Реализованы иссл
 
 ## Запуск
 
-В Docker (локальные окна через X11/WSLg):
+По умолчанию запускается `hard_52332` (seed 52332). Для исходной карты: `SCENARIO=public_1 docker compose up`.
+Веса исследования: `turn_weight=2`, `perimeter_weight=4`.
+
 
 ```bash
 xhost +local:docker

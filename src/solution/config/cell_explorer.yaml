@@ -7,7 +7,7 @@ cell_explorer:
     path_weight: 1.0
     turn_weight: 2.0
     maze_cells: 8
-    perimeter_weight: 2.0
+    perimeter_weight: 4.0
     switch_margin: 1.0
     corridor_cells: 4
     extension_distance: 1.5
