@@ -201,7 +201,7 @@ def check_boundary(cell, side, cols, rows, what):
         raise ValueError(f'{what}: сторона {side} ячейки {cell} не на границе полигона')
 
 
-def generate(sc):
+def generate(sc, extern=False):
     rng = random.Random(sc.get('seed', 0))
     size = float(sc.get('cell_size', 2.0))
     cols, rows = sc.get('grid', [8, 8])
@@ -334,13 +334,16 @@ Pose {{
 
     # ---- Робот и судья
     yaw = math.radians(float(start.get('yaw_deg', 0)))
+    courier_ctrl = '<extern>' if extern else 'courier_driver'
+    referee_ctrl = '<extern>' if extern else 'referee'
     parts.append(f'''DEF COURIER Courier {{
   translation {fmt(scx, scy, 0.0)}
   rotation 0 0 1 {yaw:.4f}
+  controller "{courier_ctrl}"
 }}
 Robot {{
   name "referee"
-  controller "referee"
+  controller "{referee_ctrl}"
   supervisor TRUE
 }}
 ''')
@@ -368,11 +371,12 @@ def main():
     ap.add_argument('scenario')
     ap.add_argument('--out', default=os.path.join(os.path.dirname(__file__), '..', 'webots', 'worlds'))
     ap.add_argument('--name', help='имя выходных файлов (по умолчанию — из сценария)')
+    ap.add_argument('--extern', action='store_true', help='использовать <extern> для внешнего запуска контроллеров')
     args = ap.parse_args()
 
     with open(args.scenario, encoding='utf-8') as f:
         sc = yaml.safe_load(f)
-    world, meta = generate(sc)
+    world, meta = generate(sc, extern=args.extern)
     name = args.name or sc['name']
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, name + '.wbt'), 'w', encoding='utf-8') as f:

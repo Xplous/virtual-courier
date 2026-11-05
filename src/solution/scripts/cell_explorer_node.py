@@ -225,11 +225,19 @@ class CellExplorer(MazeGrid):
                 self.request_id += 1
                 self.request_next()
             return
-        if (
-            not self.fitted
-            or not self.planner.server_is_ready()
-            or not self.navigator.server_is_ready()
-        ):
+        if not self.fitted:
+            return
+        if not self.planner.server_is_ready():
+            self.get_logger().warn(
+                "Ожидание сервера планировщика /exploration/compute_path_to_pose...",
+                throttle_duration_sec=5.0,
+            )
+            return
+        if not self.navigator.server_is_ready():
+            self.get_logger().warn(
+                "Ожидание сервера навигатора /navigate_to_pose...",
+                throttle_duration_sec=5.0,
+            )
             return
         try:
             t = self.buffer.lookup_transform(
@@ -248,10 +256,9 @@ class CellExplorer(MazeGrid):
         if self.delivery_state == "DOCK_STATION":
             if self.station_cell is None or self.active is not None:
                 return
-            point = self.free_point(self.station_cell)
-            if point is None:
-                self.station_result.publish(String(data="failed"))
-                return
+            center_grid = 2.0 * np.asarray(self.station_cell)
+            center_world = center_grid @ self.grid_rotation.T + self.grid_origin
+            point = (float(center_world[0]), float(center_world[1]))
             self.send_navigation(
                 dict(
                     cell=self.station_cell,
@@ -473,6 +480,8 @@ class CellExplorer(MazeGrid):
                     best = current
             elif extensions and best["probe"] is None:
                 best = min(extensions, key=lambda c: c["cost"])
+            elif current["probe"] is None and current["cell"] not in self.visited:
+                best = current
             elif current["probe"] is None and current["cell"] in self.visited:
                 onward = [c for c in valid if c["key"] != current["key"]]
                 if onward:

@@ -1,0 +1,29 @@
+# Конфигурация для повторного прогона 8 аварийных заездов ночной серии.
+# После применения фикса стабильности Webots (Mesa Single-Thread + Shader Cache Disable).
+
+scenario: scene/scenarios/public_1.yaml
+simulation_limit: 600
+wall_timeout: 1200
+core_limit_mb: 1024
+max_core_dumps: 3
+ros_domain_id: 92
+scene_image: ghcr.io/ssskiv/virtual-courier-scene:latest
+solution_image: virtual-courier-solution:headless
+
+trials:
+  - seed: 92813
+    parameters: {turn_weight: 1.0, perimeter_weight: 0.0}
+  - seed: 37400
+    parameters: {turn_weight: 1.0, perimeter_weight: 2.0}
+  - seed: 92813
+    parameters: {turn_weight: 1.0, perimeter_weight: 4.0}
+  - seed: 2026
+    parameters: {turn_weight: 2.0, perimeter_weight: 0.0}
+  - seed: 52332
+    parameters: {turn_weight: 2.0, perimeter_weight: 0.0}
+  - seed: 58603
+    parameters: {turn_weight: 2.0, perimeter_weight: 2.0}
+  - seed: 58603
+    parameters: {turn_weight: 2.0, perimeter_weight: 4.0}
+  - seed: 92813
+    parameters: {turn_weight: 4.0, perimeter_weight: 0.0}

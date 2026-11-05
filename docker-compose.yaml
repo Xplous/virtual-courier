@@ -24,10 +24,10 @@ services:
     ipc: host
     network_mode: host
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${X11_DIR:-/tmp/.X11-unix}:/tmp/.X11-unix:rw
       - /dev/dri:/dev/dri   # ускорение графики (Intel/AMD)
       - ${SCENARIO_DIR:-./scene/scenarios}:/scenarios:ro
-      - ./results:/results
+      - ${RESULTS_DIR:-./results}:/results
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f referee.py || exit 1"]
       interval: 5s
@@ -51,6 +51,6 @@ services:
       scene:
         condition: service_healthy
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${X11_DIR:-/tmp/.X11-unix}:/tmp/.X11-unix:rw
       - /dev/dri:/dev/dri   # ускорение графики (Intel/AMD)
-      - ./src/solution:/ros_ws/src/solution
+      - ${SOLUTION_DIR:-./src/solution}:/ros_ws/src/solution

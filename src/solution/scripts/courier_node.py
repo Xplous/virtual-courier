@@ -51,7 +51,8 @@ class Courier(Node):
         # ---- компоненты подсистемы доставки
         self.detector = StationDetector()
         self.dock_config = DockingConfig(target_dist=0.65, min_safe_laser_dist=0.28)
-        self.cargo_loader = CargoLoader(config=LoaderConfig(dwell_target=2.0))
+        self.cargo_loader = CargoLoader(config=LoaderConfig(dwell_target=2.0, timeout=8.0))
+        self.station_distances = {}
         self.unload_ctrl = UnloadController(
             target_rear_dist=0.35, min_safe_rear_dist=0.29
         )
@@ -195,10 +196,10 @@ class Courier(Node):
         self.status_marker_pub.publish(marker)
 
     def remember_station_cell(self, detection):
-        if (
-            detection.marker_id not in (1, 2, 3)
-            or detection.marker_id in self.station_cells
-        ):
+        if detection.marker_id not in (1, 2, 3):
+            return
+        prev_dist = self.station_distances.get(detection.marker_id, float('inf'))
+        if detection.marker_id in self.station_cells and detection.distance >= prev_dist:
             return
         rotation, _ = cv2.Rodrigues(detection.rvec)
         inside = detection.tvec + 0.5 * rotation[:, 2]
@@ -216,7 +217,8 @@ class Courier(Node):
         position = do_transform_point(point, transform).point
         cell = math.floor(position.x / 2 + 0.5), math.floor(position.y / 2 + 0.5)
         self.station_cells[detection.marker_id] = cell
-        self.get_logger().info(f"Запомнена станция {detection.name}: клетка {cell}.")
+        self.station_distances[detection.marker_id] = detection.distance
+        self.get_logger().info(f"Запомнена станция {detection.name}: клетка {cell} (дистанция {detection.distance:.2f} м).")
 
     def publish_station_markers(self):
         markers = []
@@ -379,7 +381,6 @@ class Courier(Node):
                 self.state = "DOCK_UNLOAD"
 
         elif self.state == "LOAD_CARGO":
-            self.stop()
             self.set_tray(TRAY_DOWN)
             res = self.cargo_loader.update(
                 current_time=t,
@@ -387,9 +388,18 @@ class Courier(Node):
                 linear_vel=self.speed[0],
                 angular_vel=self.speed[1],
             )
-            self.status_detail = (
-                f"Loading: {res.status.value}\nStill for {res.dwell_time:.1f} s"
-            )
+            # Доводка по камере, если робот стоит неподвижно > 2.2 с, а груз не выдан
+            time_docked = (t - self.cargo_loader.docked_timestamp) if self.cargo_loader.docked_timestamp else 0.0
+            det = next((d for d in detections if d.marker_id == self.target_station_id), None)
+            if self.cargo_count == self.cargo_loader.initial_cargo_count and time_docked > 2.2 and det is not None and front_laser > 0.35:
+                dock_res = compute_docking_cmd(det.tvec, self.dock_config, front_laser)
+                self.drive(min(0.10, max(0.0, dock_res.linear_vel)), dock_res.angular_vel)
+                self.status_detail = f"CV nudging: d={det.distance:.2f} m | lidar={front_laser:.2f} m"
+            else:
+                self.stop()
+                self.status_detail = (
+                    f"Loading: {res.status.value}\nStill for {res.dwell_time:.1f} s"
+                )
             self.get_logger().info(
                 f"Загрузка: статус={res.status.value}, покой={res.dwell_time:.1f} с, "
                 f"ожидание={t - self.cargo_loader.docked_timestamp:.1f} с, "

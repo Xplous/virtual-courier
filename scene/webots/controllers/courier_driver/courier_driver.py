@@ -156,11 +156,11 @@ class CourierDriver(Node):
         self.update_motors(t, dt)
         self.update_odometry(t)
 
-        if ms % LIDAR_PERIOD == 0:
+        if ms > 0 and ms % LIDAR_PERIOD == 0:
             self.publish_scan(t)
-        if ms % CAMERA_PERIOD == 0:
+        if ms > 0 and ms % CAMERA_PERIOD == 0:
             self.publish_camera(t)
-        if ms % IMU_PERIOD == 0:
+        if ms > 0 and ms % IMU_PERIOD == 0:
             self.publish_imu(t)
             self.tray_pub.publish(Float64(data=float(self.tray_sensor.getValue())))
 
@@ -215,7 +215,10 @@ class CourierDriver(Node):
         self.tf_pub.publish(TFMessage(transforms=[make_tf('odom', 'base_link', (self.x, self.y, 0.0), q, t)]))
 
     def publish_scan(self, t):
-        ranges = self.lidar.getRangeImage()
+        try:
+            ranges = self.lidar.getRangeImage()
+        except (ValueError, SystemError):
+            return
         if not ranges:
             return
         n = len(ranges)
@@ -235,7 +238,10 @@ class CourierDriver(Node):
         self.scan_pub.publish(msg)
 
     def publish_camera(self, t):
-        data = self.camera.getImage()
+        try:
+            data = self.camera.getImage()
+        except (ValueError, SystemError):
+            return
         if not data:
             return
         w, h = self.camera.getWidth(), self.camera.getHeight()

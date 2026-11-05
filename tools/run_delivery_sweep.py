@@ -44,6 +44,17 @@ def make_plan(config):
     defaults = yaml.safe_load(
         (ROOT / "src/solution/config/cell_explorer.yaml").read_text()
     )["cell_explorer"]["ros__parameters"]
+    if "trials" in config:
+        plan = []
+        for i, t in enumerate(config["trials"], start=1):
+            p = t["parameters"].copy()
+            for k, v in p.items():
+                if isinstance(defaults.get(k), float):
+                    p[k] = float(v)
+            plan.append(dict(index=i, seed=t["seed"], parameters=p))
+        if not plan:
+            raise ValueError("Пустой список заездов в trials")
+        return plan
     matrix = config["matrix"]
     for key, values in matrix.items():
         if key not in defaults or not isinstance(values, list) or not values:
@@ -173,6 +184,12 @@ def run_one(output, config, trial):
             "GALLIUM_DRIVER=llvmpipe",
             "-e",
             "LP_NUM_THREADS=1",
+            "-e",
+            "MESA_SHADER_CACHE_DISABLE=true",
+            "-e",
+            "GALLIUM_NUM_THREADS=1",
+            "-e",
+            "mesa_glthread=false",
             "-v",
             f"{output}/source_scene:/scene",
             "-v",
@@ -358,7 +375,12 @@ def main():
         )
         result, interrupted = run_one(output, config, trial)
         rows.append(result)
-        save_summary(output, rows, list(config["matrix"]))
+        parameter_names = (
+            list(config["matrix"])
+            if "matrix" in config
+            else list(plan[0]["parameters"].keys())
+        )
+        save_summary(output, rows, parameter_names)
         print(
             f'  {result["status"]}: score={result["score"]}, delivered={result["delivered"]}',
             flush=True,

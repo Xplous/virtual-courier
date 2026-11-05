@@ -70,6 +70,7 @@ def generate_launch_description():
                         "use_sim_time": True,
                         "autostart": True,
                         "node_names": ["planner_server"],
+                        "bond_timeout": 15.0,
                     }
                 ],
             ),
