@@ -115,6 +115,13 @@ class Courier(Node):
     # ================================================================ колбэки сенсоров
 
     def on_station_navigation(self, msg):
+        if self.state == "NAV_TO_UNLOAD":
+            if msg.data == "reached":
+                self.stop()
+                self.state = "DOCK_UNLOAD"
+                self.get_logger().info("Nav2 достиг зоны выгрузки; точная стыковка.")
+                self.state_pub.publish(String(data=self.state))
+            return
         if self.state != "DOCK_STATION":
             return
         if msg.data == "reached":
@@ -319,22 +326,15 @@ class Courier(Node):
             and d.marker_id not in self.collected_stations
             and t >= self.station_retry_after.get(d.marker_id, 0.0)
         ]
-        unload_markers = [d for d in detections if d.marker_id == 0]
         self.publish_station_markers()
 
         # 2. Логика переходов FSM
         if self.state == "EXPLORE":
             if self.cargo_count > 0:
-                if unload_markers:
-                    self.get_logger().info(
-                        "Обнаружен маркер выгрузки ArUco 0! Переход к DOCK_UNLOAD."
-                    )
-                    self.state = "DOCK_UNLOAD"
-                else:
-                    self.get_logger().info(
-                        f"На борту {self.cargo_count} груз(а). Направление в зону выгрузки (NAV_TO_UNLOAD)."
-                    )
-                    self.state = "NAV_TO_UNLOAD"
+                self.get_logger().info(
+                    f"На борту {self.cargo_count} груз(а). Направление в зону выгрузки (NAV_TO_UNLOAD)."
+                )
+                self.state = "NAV_TO_UNLOAD"
             elif active_stations:
                 try:
                     position = self.tf_buffer.lookup_transform(
@@ -371,14 +371,6 @@ class Courier(Node):
                 self.get_logger().warn(
                     "Таймаут пути к станции (45 с); возврат к исследованию."
                 )
-
-        elif self.state == "NAV_TO_UNLOAD":
-            if unload_markers:
-                target = unload_markers[0]
-                self.get_logger().info(
-                    f"В поле зрения маркер выгрузки ArUco 0 (d={target.distance:.2f}м)! Переход к DOCK_UNLOAD."
-                )
-                self.state = "DOCK_UNLOAD"
 
         elif self.state == "LOAD_CARGO":
             self.set_tray(TRAY_DOWN)
@@ -442,7 +434,7 @@ class Courier(Node):
                     throttle_duration_sec=1.0,
                 )
                 self.drive(res.linear_vel, res.angular_vel)
-                if res.is_docked or front_laser <= 0.38:
+                if res.is_docked:
                     self.stop()
                     self.unload_ctrl.start(t, yaw)
                     self.state = "UNLOAD"
@@ -455,12 +447,7 @@ class Courier(Node):
                     f"Маркер выгрузки не виден; лидар={front_laser:.2f} м.",
                     throttle_duration_sec=1.0,
                 )
-                if front_laser <= 0.40:
-                    self.stop()
-                    self.unload_ctrl.start(t, yaw)
-                    self.state = "UNLOAD"
-                else:
-                    self.drive(0.12, 0.0)
+                self.stop()
 
         elif self.state == "UNLOAD":
             previous_phase = self.unload_ctrl.state

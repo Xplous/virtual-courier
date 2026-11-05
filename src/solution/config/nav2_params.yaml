@@ -1,5 +1,5 @@
 # Nav2 для робота Courier. Основано на nav2_bringup/params/nav2_params.yaml:
-# base_link вместо base_footprint, радиус 0.18 м, MPPI до 0.7 м/с.
+# base_link вместо base_footprint, радиус 0.22 м, MPPI до 0.7 м/с.
 bt_navigator:
   ros__parameters:
     use_sim_time: True
@@ -166,7 +166,7 @@ local_costmap:
       width: 8
       height: 8
       resolution: 0.05
-      robot_radius: 0.18
+      robot_radius: 0.22
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -203,7 +203,7 @@ global_costmap:
       robot_base_frame: base_link
       use_sim_time: True
       transform_tolerance: 2.0
-      robot_radius: 0.18
+      robot_radius: 0.22
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
@@ -238,10 +238,10 @@ planner_server:
     transform_tolerance: 2.0
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: "nav2_navfn_planner/NavfnPlanner"
+      plugin: "nav2_smac_planner/SmacPlanner2D"
       tolerance: 0.5
-      use_astar: false
       allow_unknown: true
+      max_planning_time: 2.0
 
 smoother_server:
   ros__parameters:

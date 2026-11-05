@@ -115,6 +115,7 @@ class CellExplorer(MazeGrid):
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         self.visited = set()
+        self.uninteresting = set()
         self.start_cell = None
         self.perimeter_boxes = []
         self.inspected = set()
@@ -180,11 +181,54 @@ class CellExplorer(MazeGrid):
 
     def on_map(self, msg):
         super().on_map(msg)
+        self.inspected = {
+            key
+            for key in self.inspected
+            if self.edges.get(edge_key(*key)) in ("open", "wall")
+        }
         free = (self.cells == 0).astype(np.uint8)
         padded = np.pad(free, 1)
         self.clearances = (
             cv2.distanceTransform(padded, cv2.DIST_L2, 5)[1:-1, 1:-1] * self.resolution
         )
+        self.refresh_uninteresting()
+        self.publish_cells(self.active["point"] if self.active else None)
+
+    def is_uninteresting(self, cell):
+        size = self.param("maze_cells")
+        return (
+            bool(self.perimeter_boxes)
+            and all(
+                x < cell[0] < x + size - 1 and y < cell[1] < y + size - 1
+                for x, y in self.perimeter_boxes
+            )
+            and all(
+                self.edges.get(edge_key(cell, adjacent)) in ("open", "wall")
+                for adjacent in neighbours(cell)
+            )
+        )
+
+    def refresh_uninteresting(self):
+        cells = set()
+        for axis, i, j in self.edges:
+            cells.add((i, j))
+            cells.add((i + 1, j) if axis == "v" else (i, j + 1))
+        self.uninteresting = {cell for cell in cells if self.is_uninteresting(cell)}
+        if (
+            self.delivery_state == "EXPLORE"
+            and self.active is not None
+            and self.active["probe"] is None
+            and self.active["cell"] in self.uninteresting
+        ):
+            self.get_logger().info(
+                f'Клетка {self.active["cell"]} больше не требует посещения; перевыбор цели.'
+            )
+            self.evaluation = None
+            self.request_id += 1
+            self.nav_generation += 1
+            if self.nav_handle is not None:
+                self.nav_handle.cancel_goal_async()
+            self.active = self.nav_handle = None
 
     def free_point(self, cell, probe=None):
         yy, xx = np.nonzero(self.clearances >= self.param("clearance"))
@@ -312,16 +356,19 @@ class CellExplorer(MazeGrid):
             self.perimeter_boxes = perimeter_hypotheses(
                 set(parents) | self.visited, self.start_cell, self.param("maze_cells")
             )
+        self.refresh_uninteresting()
         steps = {current: 0}
         for cell, parent in parents.items():
             if parent is not None:
                 steps[cell] = steps[parent] + 1
         choices = {}
         for cell, parent in parents.items():
-            if cell not in self.visited:
+            if cell not in self.visited and cell not in self.uninteresting:
                 end = extend_corridor(
                     cell, parent, self.edges, self.param("corridor_cells")
                 )
+                if end in self.uninteresting:
+                    end = cell
                 choices[(end, None)] = self.free_point(end)
         choices = {k: p for k, p in choices.items() if p is not None}
         if self.active is not None and self.active["probe"] is None:
@@ -447,7 +494,7 @@ class CellExplorer(MazeGrid):
                 needed = (
                     candidate["cell"] not in self.visited
                     or candidate["key"] == active_key
-                )
+                ) and candidate["cell"] not in self.uninteresting
             else:
                 needed = candidate["key"] not in self.inspected
             if needed:
@@ -527,13 +574,23 @@ class CellExplorer(MazeGrid):
                 status, str(status)
             )
             self.get_logger().info(f'Nav2: цель {candidate["cell"]} — {label}.')
-            if candidate.get("is_station"):
+            if candidate.get("is_station") or candidate.get("is_home"):
                 self.station_result.publish(
                     String(data="reached" if status == 4 else "failed")
                 )
-            if f.result().status == 4 and candidate["probe"]:
-                self.inspected.add(candidate["key"])
-            elif f.result().status != 4:
+            if status == 4 and candidate["probe"]:
+                edge = edge_key(candidate["cell"], candidate["probe"])
+                if self.edges.get(edge) in ("open", "wall"):
+                    self.inspected.add(candidate["key"])
+                else:
+                    self.retry_after[candidate["key"]] = time.monotonic() + self.param(
+                        "retry_delay"
+                    )
+                    self.get_logger().warn(
+                        f'Переход {candidate["key"]} остался неизвестным; повторный осмотр через '
+                        f'{self.param("retry_delay"):.0f} с.'
+                    )
+            elif status != 4:
                 self.retry_after[candidate["key"]] = time.monotonic() + self.param(
                     "retry_delay"
                 )
@@ -551,7 +608,7 @@ class CellExplorer(MazeGrid):
         marker.scale.x = marker.scale.y = 1.8
         marker.scale.z = 0.01
         marker.color.b, marker.color.g, marker.color.a = 1.0, 0.5, 0.15
-        for cell in sorted(self.visited):
+        for cell in sorted(self.visited | self.uninteresting):
             marker.points.append(
                 Point(x=float(2 * cell[0]), y=float(2 * cell[1]), z=0.02)
             )
@@ -559,9 +616,12 @@ class CellExplorer(MazeGrid):
                 self.edges.get(edge_key(cell, b), "unknown") != "unknown"
                 for b in neighbours(cell)
             )
-            marker.colors.append(
-                ColorRGBA(r=0.0 if exits_known else 1.0, g=0.8, b=0.2, a=0.15)
-            )
+            if cell not in self.visited:
+                marker.colors.append(ColorRGBA(r=0.45, g=0.45, b=0.45, a=0.45))
+            else:
+                marker.colors.append(
+                    ColorRGBA(r=0.0 if exits_known else 1.0, g=0.8, b=0.2, a=0.15)
+                )
         target = Marker()
         target.header.frame_id = "map"
         target.ns = "cell_goal"
