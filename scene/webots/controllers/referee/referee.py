@@ -75,6 +75,10 @@ class Referee(Node):
         if not meta_path:
             world = sup.getWorldPath()
             meta_path = os.path.splitext(world)[0] + '.json'
+        if not os.path.exists(meta_path):
+            fallback = os.path.join('/scene/webots/worlds', os.path.basename(meta_path))
+            if os.path.exists(fallback):
+                meta_path = fallback
         with open(meta_path, encoding='utf-8') as f:
             self.meta = json.load(f)
 

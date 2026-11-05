@@ -1,0 +1,44 @@
+# Запуск окружения с нативным Webots на Windows (RTX GPU)
+# и ROS 2 Humble в Docker.
+name: virtual-courier-native
+
+x-ros-env: &ros-env
+  ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+
+services:
+  controllers:
+    image: ghcr.io/ssskiv/virtual-courier-scene:latest
+    container_name: vc_controllers
+    entrypoint: ["bash", "/docker/scene/run_extern_controllers.sh"]
+    environment:
+      <<: *ros-env
+      WEBOTS_HOST: ${WEBOTS_HOST:-172.21.224.1}
+    ipc: host
+    network_mode: host
+    volumes:
+      - ./scene:/scene
+      - ./results:/results
+      - ./docker/scene/run_extern_controllers.sh:/docker/scene/run_extern_controllers.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f referee.py || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+      start_period: 2s
+
+  solution:
+    image: ghcr.io/ssskiv/virtual-courier-solution:latest
+    container_name: vc_solution
+    stdin_open: true
+    tty: true
+    environment:
+      <<: *ros-env
+      GUI: ${GUI:-false}
+    ipc: host
+    network_mode: host
+    depends_on:
+      controllers:
+        condition: service_healthy
+    volumes:
+      - ${SOLUTION_DIR:-./src/solution}:/ros_ws/src/solution
