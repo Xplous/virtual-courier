@@ -5,6 +5,7 @@ find_package(ament_cmake REQUIRED)
 
 install(PROGRAMS
   scripts/cell_explorer_node.py
+  scripts/costmap_cloud_node.py
   scripts/courier_node.py
   scripts/station_detector.py
   scripts/docking_controller.py

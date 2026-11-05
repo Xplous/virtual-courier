@@ -30,6 +30,8 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
 TRAY_DOWN = 0.0
+MISSION_TIME_LIMIT = 600.0
+RETURN_RESERVE = 180.0
 
 
 class Courier(Node):
@@ -54,9 +56,10 @@ class Courier(Node):
         self.cargo_loader = CargoLoader(config=LoaderConfig(dwell_target=2.0, timeout=8.0))
         self.station_distances = {}
         self.unload_ctrl = UnloadController(
-            target_rear_dist=0.315, min_safe_rear_dist=0.285
+            target_rear_dist=0.365, min_safe_rear_dist=0.345
         )
         self.unload_count = 0
+        self.unload_marker = None
 
         # Реестр обнаруженных станций {marker_id: StationDetection}
         self.known_stations = {}
@@ -71,6 +74,7 @@ class Courier(Node):
         self.start_pose = None
         self.stationary_explore_start = None
         self.state = "WAIT_SENSORS"
+        self.mission_started = None
         self.status_detail = "Waiting for camera and lidar"
 
         # ---- подписки
@@ -204,6 +208,19 @@ class Courier(Node):
         )
         self.status_marker_pub.publish(marker)
 
+    def remember_unload_marker(self, detection):
+        point = PointStamped()
+        point.header = self.image_header
+        point.point.x, point.point.y, point.point.z = map(float, detection.tvec)
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                "map", point.header.frame_id, rclpy.time.Time.from_msg(point.header.stamp)
+            )
+        except TransformException:
+            return
+        self.unload_marker = do_transform_point(point, transform)
+        self.unload_marker.header.stamp = rclpy.time.Time().to_msg()
+
     def remember_station_cell(self, detection):
         if detection.marker_id not in (1, 2, 3):
             return
@@ -295,11 +312,16 @@ class Courier(Node):
                 self.get_logger().info("Все датчики готовы — старт миссии доставки!")
                 self.set_tray(TRAY_DOWN)
                 self.start_pose = (self.pose[0], self.pose[1], self.pose[2])
+                self.mission_started = self.now_sec()
                 self.state = "EXPLORE"
             self.publish_status_marker()
             return
 
         t = self.now_sec()
+        return_due = (
+            self.cargo_count > 0
+            and t - self.mission_started >= MISSION_TIME_LIMIT - RETURN_RESERVE
+        )
         yaw = self.pose[2]
         front_laser = self.sector_min(-15, 15)
         rear_laser = self.sector_min(160, 200)
@@ -316,6 +338,8 @@ class Courier(Node):
         status_dict = {}
 
         for det in detections:
+            if det.marker_id == 0:
+                self.remember_unload_marker(det)
             self.remember_station_cell(det)
             prev = self.known_stations.get(det.marker_id)
             if prev is None:
@@ -385,7 +409,12 @@ class Courier(Node):
             ),
             None,
         )
-        if close_station and self.state in ("EXPLORE", "DOCK_STATION"):
+        if (
+            close_station
+            and self.cargo_count < 3
+            and not return_due
+            and self.state in ("EXPLORE", "DOCK_STATION")
+        ):
             self.stop()
             self.target_station_id = close_station.marker_id
             self.cargo_loader.start_loading(t, self.cargo_count)
@@ -395,8 +424,7 @@ class Courier(Node):
             )
 
         if self.state == "EXPLORE":
-            # Защита от зависания исследования с грузом на борту:
-            if self.cargo_count > 0:
+            if self.cargo_count >= 3 or return_due:
                 self.get_logger().info(
                     f"На борту {self.cargo_count} груз(а). Направление в зону выгрузки (NAV_TO_UNLOAD)."
                 )
@@ -502,14 +530,17 @@ class Courier(Node):
             )
             if res.status == LoadingStatus.SUCCESS:
                 self.collected_stations.add(self.target_station_id)
+                self.state = (
+                    "NAV_TO_UNLOAD" if self.cargo_count >= 3 or return_due else "EXPLORE"
+                )
                 self.get_logger().info(
-                    f"Груз со станции {self.target_station_id} успешно получен! (На лотке: {self.cargo_count}). Переход к NAV_TO_UNLOAD."
+                    f"Груз со станции {self.target_station_id} получен; "
+                    f"на лотке {self.cargo_count}/3. Переход к {self.state}."
                 )
                 if self.target_station_id in self.known_stations:
                     self.known_stations[self.target_station_id].state = (
                         StationState.ISSUED
                     )
-                self.state = "NAV_TO_UNLOAD"
             elif res.status == LoadingStatus.TIMEOUT:
                 self.station_retry_after[self.target_station_id] = t + 10.0
                 self.get_logger().warn(
@@ -520,7 +551,7 @@ class Courier(Node):
         elif self.state == "DOCK_UNLOAD":
             det = next((d for d in detections if d.marker_id == 0), None)
             if det:
-                offset = (0.0, 0.2, -0.2)[self.unload_count % 3]
+                offset = (0.0, 0.1, -0.1)[self.unload_count % 3]
                 rotation, _ = cv2.Rodrigues(det.rvec)
                 target = det.tvec + offset * rotation[:, 0]
                 res = compute_docking_cmd(target, self.dock_config, front_laser)
@@ -545,11 +576,34 @@ class Courier(Node):
                     )
             else:
                 self.status_detail = "Searching for unload marker"
+                angle = None
+                if self.unload_marker is not None:
+                    try:
+                        transform = self.tf_buffer.lookup_transform(
+                            "base_link", "map", rclpy.time.Time()
+                        )
+                        point = do_transform_point(self.unload_marker, transform).point
+                        angle = math.atan2(point.y, point.x)
+                    except TransformException:
+                        pass
+                if angle is not None and abs(angle) > 0.2:
+                    self.drive(0.0, max(-0.5, min(0.5, 1.4 * angle)))
+                elif front_laser < 0.8:
+                    if rear_laser > 0.45:
+                        self.status_detail = "Backing away to see the whole marker"
+                        self.drive(-0.1, 0.0)
+                    else:
+                        self.status_detail = "Marker lost; no clearance to reverse"
+                        self.stop()
+                elif angle is not None:
+                    self.drive(0.0, max(-0.5, min(0.5, 1.4 * angle + 0.25 * math.sin(t))))
+                else:
+                    self.drive(0.0, 0.3)
                 self.get_logger().warn(
-                    "Маркер выгрузки не виден; поиск поворотом на месте.",
+                    f"Маркер выгрузки не виден; {self.status_detail}; "
+                    f"лидар спереди={front_laser:.2f} м, сзади={rear_laser:.2f} м.",
                     throttle_duration_sec=1.0,
                 )
-                self.drive(0.0, 0.3)
 
         elif self.state == "UNLOAD":
             previous_phase = self.unload_ctrl.state
@@ -613,6 +667,13 @@ class Courier(Node):
         elif self.state == "MISSION_COMPLETE":
             self.stop()
             self.set_tray(TRAY_DOWN)
+
+        if return_due and self.state in ("EXPLORE", "DOCK_STATION", "LOAD_CARGO"):
+            self.stop()
+            self.state = "NAV_TO_UNLOAD"
+            self.get_logger().info(
+                f"До лимита не более {RETURN_RESERVE:.0f} с; возвращение с {self.cargo_count} груз(ами)."
+            )
 
         # 3. Публикация текущего состояния FSM для координации с навигатором
         self.state_pub.publish(String(data=self.state))

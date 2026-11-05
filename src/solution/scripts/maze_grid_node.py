@@ -84,7 +84,9 @@ class MazeGrid(Node):
             np.arctan2(np.sin(4 * (angles - angle)), np.cos(4 * (angles - angle))) / 4
         )
         aligned = np.abs(errors) <= math.radians(3)
-        if lengths[aligned].sum() < 4.0:
+        vertical = np.abs(np.sin(angles - angle)) > 0.7
+        both_axes = np.any(vertical & aligned) and np.any(~vertical & aligned)
+        if lengths[aligned].sum() < 4.0 and not both_axes:
             return
         angle = (
             math.atan2(
@@ -94,7 +96,6 @@ class MazeGrid(Node):
             / 4
         )
         mids = endpoints.mean(axis=1) @ self.rotation(angle)
-        vertical = np.abs(np.sin(angles - angle)) > 0.7
         offset = self.offset.copy()
         for axis, selected in enumerate((vertical & aligned, ~vertical & aligned)):
             if not np.any(selected):

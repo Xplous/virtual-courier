@@ -30,6 +30,12 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("gui", default_value="true"),
             Node(
+                package="solution",
+                executable="costmap_cloud_node.py",
+                output="screen",
+                parameters=[{"use_sim_time": True}],
+            ),
+            Node(
                 package="slam_toolbox",
                 executable="async_slam_toolbox_node",
                 name="slam_toolbox",
