@@ -442,12 +442,12 @@ class Courier(Node):
                         "Стыковка с зоной выгрузки завершена. Запуск цикла UNLOAD."
                     )
             else:
-                self.status_detail = f"Unload marker lost | lidar={front_laser:.2f} m"
+                self.status_detail = "Searching for unload marker"
                 self.get_logger().warn(
-                    f"Маркер выгрузки не виден; лидар={front_laser:.2f} м.",
+                    "Маркер выгрузки не виден; поиск поворотом на месте.",
                     throttle_duration_sec=1.0,
                 )
-                self.stop()
+                self.drive(0.0, 0.3)
 
         elif self.state == "UNLOAD":
             previous_phase = self.unload_ctrl.state
