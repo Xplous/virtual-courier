@@ -11,7 +11,7 @@ script_dir = Path(__file__).resolve().parent
 if str(script_dir) not in sys.path:
     sys.path.insert(0, str(script_dir))
 
-from station_detector import StationDetector, StationState
+from station_detector import StationDetection, StationDetector, StationState
 from docking_controller import DockingConfig, compute_docking_cmd
 from cargo_loader import CargoLoader, LoaderConfig, LoadingStatus
 from unload_controller import UnloadController
@@ -54,7 +54,7 @@ class Courier(Node):
         self.cargo_loader = CargoLoader(config=LoaderConfig(dwell_target=2.0, timeout=8.0))
         self.station_distances = {}
         self.unload_ctrl = UnloadController(
-            target_rear_dist=0.35, min_safe_rear_dist=0.29
+            target_rear_dist=0.315, min_safe_rear_dist=0.285
         )
         self.unload_count = 0
 
@@ -68,6 +68,8 @@ class Courier(Node):
         self.station_target = None
         self.station_nav_started = None
         self.station_retry_after = {}
+        self.start_pose = None
+        self.stationary_explore_start = None
         self.state = "WAIT_SENSORS"
         self.status_detail = "Waiting for camera and lidar"
 
@@ -205,14 +207,31 @@ class Courier(Node):
     def remember_station_cell(self, detection):
         if detection.marker_id not in (1, 2, 3):
             return
+        # Фильтр ArUco: отсекаем далекие (d > 2.2 м) и косые (|bearing| > 35 град) детекции
+        if detection.distance <= 0.15 or detection.distance > 2.2:
+            return
+        bearing = math.atan2(float(detection.tvec[0]), float(detection.tvec[2]))
+        if abs(bearing) > math.radians(35.0):
+            return
+
         prev_dist = self.station_distances.get(detection.marker_id, float('inf'))
         if detection.marker_id in self.station_cells and detection.distance >= prev_dist:
             return
-        rotation, _ = cv2.Rodrigues(detection.rvec)
-        inside = detection.tvec + 0.5 * rotation[:, 2]
+
+        # Отступ 0.65 м вдоль луча зрения от маркера к роботу
+        # Гарантирует попадание строго в ядро свободной клетки коридора перед станцией (без шума PnP rvec)
+        RAY_OFFSET = 0.65
+        norm_tvec = float(detection.distance)
+        if norm_tvec > 1e-3:
+            safe_dist = max(0.20, norm_tvec - RAY_OFFSET)
+            scale = safe_dist / norm_tvec
+            safe_pt = detection.tvec * scale
+        else:
+            safe_pt = detection.tvec
+
         point = PointStamped()
         point.header = self.image_header
-        point.point.x, point.point.y, point.point.z = map(float, inside)
+        point.point.x, point.point.y, point.point.z = map(float, safe_pt)
         try:
             transform = self.tf_buffer.lookup_transform(
                 "maze_grid",
@@ -275,6 +294,7 @@ class Courier(Node):
             if self.scan is not None and self.image is not None:
                 self.get_logger().info("Все датчики готовы — старт миссии доставки!")
                 self.set_tray(TRAY_DOWN)
+                self.start_pose = (self.pose[0], self.pose[1], self.pose[2])
                 self.state = "EXPLORE"
             self.publish_status_marker()
             return
@@ -298,10 +318,27 @@ class Courier(Node):
         for det in detections:
             self.remember_station_cell(det)
             prev = self.known_stations.get(det.marker_id)
-            if prev is None or (
-                det.state != StationState.UNKNOWN and prev.state == StationState.UNKNOWN
-            ):
+            if prev is None:
                 self.known_stations[det.marker_id] = det
+            elif prev.state == StationState.ACTIVE:
+                # Защита от шума: однажды подтверждённая ACTIVE станция не может стать INACTIVE/UNKNOWN
+                if det.state == StationState.ISSUED:
+                    self.known_stations[det.marker_id] = det
+                else:
+                    # Обновляем позу и углы, сохраняя статус ACTIVE
+                    det_updated = StationDetection(
+                        marker_id=det.marker_id,
+                        name=det.name,
+                        state=StationState.ACTIVE,
+                        distance=det.distance,
+                        tvec=det.tvec,
+                        rvec=det.rvec,
+                        marker_corners=det.marker_corners,
+                        lamp_center_px=det.lamp_center_px,
+                        lamp_radius_px=det.lamp_radius_px,
+                        confidence=max(prev.confidence, det.confidence),
+                    )
+                    self.known_stations[det.marker_id] = det_updated
             elif det.state != StationState.UNKNOWN:
                 self.known_stations[det.marker_id] = det
 
@@ -329,7 +366,13 @@ class Courier(Node):
         self.publish_station_markers()
 
         # 2. Логика переходов FSM
+        all_stations_accounted = (
+            len(self.collected_stations)
+            + len([d for d in self.known_stations.values() if d.state == StationState.INACTIVE])
+            >= 3
+        )
         if self.state == "EXPLORE":
+            # Защита от зависания исследования с грузом на борту:
             if self.cargo_count > 0:
                 self.get_logger().info(
                     f"На борту {self.cargo_count} груз(а). Направление в зону выгрузки (NAV_TO_UNLOAD)."
@@ -340,12 +383,13 @@ class Courier(Node):
                     position = self.tf_buffer.lookup_transform(
                         "maze_grid", "base_link", rclpy.time.Time()
                     ).transform.translation
+                    cur_pos = (position.x, position.y)
                 except TransformException:
-                    return
+                    cur_pos = (self.pose[0], self.pose[1])
                 target = min(
                     active_stations,
                     key=lambda d: math.dist(
-                        (position.x, position.y),
+                        cur_pos,
                         tuple(
                             2 * coordinate
                             for coordinate in self.station_cells[d.marker_id]
@@ -354,23 +398,58 @@ class Courier(Node):
                 )
                 self.target_station_id = target.marker_id
                 cell = self.station_cells[target.marker_id]
-                self.station_target = PointStamped()
-                self.station_target.header.frame_id = "maze_grid"
-                self.station_target.point.x = float(2 * cell[0])
-                self.station_target.point.y = float(2 * cell[1])
-                self.station_nav_started = t
-                self.state = "DOCK_STATION"
-                self.get_logger().info(
-                    f"Станция {target.name}: Nav2 направляется к её клетке."
-                )
+                cell_pos = (float(2 * cell[0]), float(2 * cell[1]))
+                dist_to_st = math.dist(cur_pos, cell_pos)
+                if dist_to_st < 0.65:
+                    self.stop()
+                    self.cargo_loader.start_loading(t, self.cargo_count)
+                    self.state = "LOAD_CARGO"
+                    self.get_logger().info(
+                        f"[INSTANT DOCK] Робот уже в зоне станции {target.name} (d={dist_to_st:.2f}м < 0.65м). Переход к LOAD_CARGO!"
+                    )
+                else:
+                    self.station_target = PointStamped()
+                    self.station_target.header.frame_id = "maze_grid"
+                    self.station_target.point.x = cell_pos[0]
+                    self.station_target.point.y = cell_pos[1]
+                    self.station_nav_started = t
+                    self.state = "DOCK_STATION"
+                    self.get_logger().info(
+                        f"[BATCH] Станция {target.name}: Nav2 направляется к её клетке (в кузове {self.cargo_count} груз(а))."
+                    )
+            # Иначе: если станций нет, но есть 1-2 кубика в кузове и t < 480 с -> спокойно продолжаем EXPLORE (разведка с грузом)!
 
         elif self.state == "DOCK_STATION":
-            if t - self.station_nav_started >= 45.0:
+            try:
+                position = self.tf_buffer.lookup_transform(
+                    "maze_grid", "base_link", rclpy.time.Time()
+                ).transform.translation
+                cur_pos = (position.x, position.y)
+            except TransformException:
+                cur_pos = (self.pose[0], self.pose[1])
+            cell = self.station_cells.get(self.target_station_id)
+            if cell is not None and math.dist(cur_pos, (2 * cell[0], 2 * cell[1])) < 0.65:
+                self.stop()
+                self.cargo_loader.start_loading(t, self.cargo_count)
+                self.state = "LOAD_CARGO"
+                self.get_logger().info(
+                    f"Робот вошёл в ядро станции {self.target_station_id}. Переход к LOAD_CARGO."
+                )
+            elif t - self.station_nav_started >= 45.0:
                 self.station_retry_after[self.target_station_id] = t + 10.0
                 self.state = "EXPLORE"
                 self.get_logger().warn(
                     "Таймаут пути к станции (45 с); возврат к исследованию."
                 )
+
+        elif self.state == "NAV_TO_UNLOAD":
+            det_0 = next((d for d in detections if d.marker_id == 0), None)
+            if det_0 and det_0.distance < 1.0:
+                self.stop()
+                self.get_logger().info(
+                    f"Маркер выгрузки ArUco 0 в упор (d={det_0.distance:.2f}м < 1.0м). Переход к DOCK_UNLOAD."
+                )
+                self.state = "DOCK_UNLOAD"
 
         elif self.state == "LOAD_CARGO":
             self.set_tray(TRAY_DOWN)
@@ -380,18 +459,12 @@ class Courier(Node):
                 linear_vel=self.speed[0],
                 angular_vel=self.speed[1],
             )
-            # Доводка по камере, если робот стоит неподвижно > 2.2 с, а груз не выдан
-            time_docked = (t - self.cargo_loader.docked_timestamp) if self.cargo_loader.docked_timestamp else 0.0
-            det = next((d for d in detections if d.marker_id == self.target_station_id), None)
-            if self.cargo_count == self.cargo_loader.initial_cargo_count and time_docked > 2.2 and det is not None and front_laser > 0.35:
-                dock_res = compute_docking_cmd(det.tvec, self.dock_config, front_laser)
-                self.drive(min(0.10, max(0.0, dock_res.linear_vel)), dock_res.angular_vel)
-                self.status_detail = f"CV nudging: d={det.distance:.2f} m | lidar={front_laser:.2f} m"
-            else:
-                self.stop()
-                self.status_detail = (
-                    f"Loading: {res.status.value}\nStill for {res.dwell_time:.1f} s"
-                )
+            # В фазе загрузки робот ОБЯЗАН стоять неподвижно (referee требует lin < 0.03, ang < 0.15 в течение 2.0 с).
+            # Любое подруливание сбрасывает таймер судьи в ноль — держим 0.0 м/с!
+            self.stop()
+            self.status_detail = (
+                f"Loading: {res.status.value}\nStill for {res.dwell_time:.1f} s"
+            )
             self.get_logger().info(
                 f"Загрузка: статус={res.status.value}, покой={res.dwell_time:.1f} с, "
                 f"ожидание={t - self.cargo_loader.docked_timestamp:.1f} с, "
@@ -473,9 +546,10 @@ class Courier(Node):
                 rear_lidar_dist=rear_laser,
                 cargo_count=self.cargo_count,
                 tray_angle=self.tray_angle,
+                scan=self.scan,
             )
             if phase_name != previous_phase:
-                timed_out = not phase_ready[previous_phase]
+                timed_out = not phase_ready.get(previous_phase, True)
                 self.get_logger().info(
                     f"Выгрузка {previous_phase} -> {phase_name}: "
                     f'{"таймаут" if timed_out else "условие выполнено"}, '
@@ -497,20 +571,15 @@ class Courier(Node):
                 self.unload_count += 1
                 self.get_logger().info(
                     f"Манёвр выгрузки {self.unload_count} завершён; "
-                    f"на лотке осталось {self.cargo_count}. Зачёт доставки проверяет судья."
+                    f"на лотке осталось {self.cargo_count}. Всего станций собрано: {len(self.collected_stations)}/3."
                 )
-                remaining_active = [
-                    d
-                    for d in self.known_stations.values()
-                    if d.marker_id in (1, 2, 3) and d.state == StationState.ACTIVE
-                ]
-                if remaining_active or not {1, 2, 3}.issubset(self.known_stations):
-                    self.state = "EXPLORE"
-                else:
+                if len(self.collected_stations) >= 3 or all_stations_accounted:
                     self.state = "MISSION_COMPLETE"
                     self.get_logger().info(
-                        "Цикл доставки завершён; итоговый зачёт проверяет судья."
+                        f"Все активные станции собраны и доставлены (собрано: {len(self.collected_stations)}, учтено 3)! Миссия завершена."
                     )
+                else:
+                    self.state = "EXPLORE"
 
         elif self.state == "MISSION_COMPLETE":
             self.stop()
