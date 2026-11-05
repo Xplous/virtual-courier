@@ -381,7 +381,7 @@ class CellExplorer(MazeGrid):
                 end = extend_corridor(
                     cell, parent, self.edges, self.param("corridor_cells")
                 )
-                if end in self.uninteresting:
+                if end in self.uninteresting or end in self.visited:
                     end = cell
                 choices[(end, None)] = self.free_point(end)
         choices = {k: p for k, p in choices.items() if p is not None}
@@ -596,7 +596,9 @@ class CellExplorer(MazeGrid):
                     np.dot(np.asarray(candidate["point"]) - current["point"], direction)
                     > 0.5
                 )
-                if same_axis and ahead:
+                extra_length = candidate["length"] - current["length"]
+                direct_extension = math.dist(current["point"], candidate["point"])
+                if same_axis and ahead and extra_length <= direct_extension + 0.5:
                     extensions.append(candidate)
             if current["length"] > self.param("extension_distance"):
                 if best["cost"] >= current["cost"] - self.param("switch_margin"):
