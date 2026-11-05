@@ -207,11 +207,11 @@ class Courier(Node):
     def remember_station_cell(self, detection):
         if detection.marker_id not in (1, 2, 3):
             return
-        # Фильтр ArUco: отсекаем далекие (d > 2.2 м) и косые (|bearing| > 35 град) детекции
-        if detection.distance <= 0.15 or detection.distance > 2.2:
+        # Фильтр ArUco: принимаем детекции до 3.5 м
+        if detection.distance <= 0.15 or detection.distance > 3.5:
             return
         bearing = math.atan2(float(detection.tvec[0]), float(detection.tvec[2]))
-        if abs(bearing) > math.radians(35.0):
+        if abs(bearing) > math.radians(50.0):
             return
 
         prev_dist = self.station_distances.get(detection.marker_id, float('inf'))
@@ -371,6 +371,29 @@ class Courier(Node):
             + len([d for d in self.known_stations.values() if d.state == StationState.INACTIVE])
             >= 3
         )
+
+        # Мгновенная погрузка при обнаружении маркера станции вблизи:
+        close_station = next(
+            (
+                d
+                for d in detections
+                if d.marker_id in (1, 2, 3)
+                and d.marker_id not in self.collected_stations
+                and self.known_stations[d.marker_id].state == StationState.ACTIVE
+                and t >= self.station_retry_after.get(d.marker_id, 0.0)
+                and 0.15 < d.distance < 0.85
+            ),
+            None,
+        )
+        if close_station and self.state in ("EXPLORE", "DOCK_STATION"):
+            self.stop()
+            self.target_station_id = close_station.marker_id
+            self.cargo_loader.start_loading(t, self.cargo_count)
+            self.state = "LOAD_CARGO"
+            self.get_logger().info(
+                f"Станция {close_station.name} рядом ({close_station.distance:.2f} м); ожидание груза."
+            )
+
         if self.state == "EXPLORE":
             # Защита от зависания исследования с грузом на борту:
             if self.cargo_count > 0:
@@ -415,9 +438,8 @@ class Courier(Node):
                     self.station_nav_started = t
                     self.state = "DOCK_STATION"
                     self.get_logger().info(
-                        f"[BATCH] Станция {target.name}: Nav2 направляется к её клетке (в кузове {self.cargo_count} груз(а))."
+                        f"Станция {target.name}: Nav2 направляется к её клетке."
                     )
-            # Иначе: если станций нет, но есть 1-2 кубика в кузове и t < 480 с -> спокойно продолжаем EXPLORE (разведка с грузом)!
 
         elif self.state == "DOCK_STATION":
             try:
@@ -443,11 +465,18 @@ class Courier(Node):
                 )
 
         elif self.state == "NAV_TO_UNLOAD":
-            det_0 = next((d for d in detections if d.marker_id == 0), None)
-            if det_0 and det_0.distance < 1.0:
+            try:
+                pos = self.tf_buffer.lookup_transform(
+                    "maze_grid", "base_link", rclpy.time.Time()
+                ).transform.translation
+                in_start_zone = abs(pos.x) < 0.8 and abs(pos.y) < 0.8
+            except TransformException:
+                in_start_zone = False
+
+            if in_start_zone:
                 self.stop()
                 self.get_logger().info(
-                    f"Маркер выгрузки ArUco 0 в упор (d={det_0.distance:.2f}м < 1.0м). Переход к DOCK_UNLOAD."
+                    "Робот в стартовой клетке; переход к стыковке выгрузки."
                 )
                 self.state = "DOCK_UNLOAD"
 
