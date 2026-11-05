@@ -231,25 +231,28 @@ class CellExplorer(MazeGrid):
             self.active = self.nav_handle = None
 
     def free_point(self, cell, probe=None):
-        yy, xx = np.nonzero(self.clearances >= self.param("clearance"))
-        world = (
-            np.column_stack((xx, yy)) + 0.5
-        ) * self.resolution @ self.map_rotation.T + self.map_origin
-        local = (world - self.grid_origin) @ self.grid_rotation
+        req_clearance = self.param("clearance")
         center = 2 * np.asarray(cell)
-        inside = np.max(np.abs(local - center), axis=1) < (
-            0.55 if probe is None else 0.75
-        )
-        if not np.any(inside):
-            return None
-        desired = (
-            center
-            if probe is None
-            else center + 0.65 * (np.asarray(probe) - np.asarray(cell))
-        )
-        score = np.linalg.norm(local[inside] - desired, axis=1)
-        best = world[inside][np.argmin(score)]
-        return float(best[0]), float(best[1])
+        limit = 0.55 if probe is None else 0.75
+        for cl in (req_clearance, 0.18, 0.14, 0.08):
+            yy, xx = np.nonzero(self.clearances >= cl)
+            if len(xx) == 0:
+                continue
+            world = (
+                np.column_stack((xx, yy)) + 0.5
+            ) * self.resolution @ self.map_rotation.T + self.map_origin
+            local = (world - self.grid_origin) @ self.grid_rotation
+            inside = np.max(np.abs(local - center), axis=1) < limit
+            if np.any(inside):
+                desired = (
+                    center
+                    if probe is None
+                    else center + 0.65 * (np.asarray(probe) - np.asarray(cell))
+                )
+                score = np.linalg.norm(local[inside] - desired, axis=1)
+                best = world[inside][np.argmin(score)]
+                return float(best[0]), float(best[1])
+        return None
 
     def tick(self):
         if self.delivery_state in (
@@ -406,6 +409,12 @@ class CellExplorer(MazeGrid):
                 for a in parents
                 for b in neighbours(a)
             )
+            if unresolved > 0:
+                self.get_logger().info(
+                    f"Сброс inspected/retry_after для повторной проверки {unresolved} неизвестных переходов..."
+                )
+                self.inspected.clear()
+                self.retry_after.clear()
             self.get_logger().info(
                 (
                     "Достижимые клетки посещены, выходы проверены"
@@ -424,7 +433,7 @@ class CellExplorer(MazeGrid):
     def pose_message(self, point):
         pose = PoseStamped()
         pose.header.frame_id = "map"
-        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.header.stamp = rclpy.time.Time().to_msg()
         pose.pose.position.x, pose.pose.position.y = point
         pose.pose.orientation.w = 1.0
         return pose
