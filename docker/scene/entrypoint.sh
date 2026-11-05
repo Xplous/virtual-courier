@@ -26,6 +26,10 @@ if [ "${WEBOTS_GUI:-true}" = "true" ]; then
 else
     # xvfb-run зависает, будучи PID 1 в контейнере, поэтому поднимаем Xvfb сами.
     export DISPLAY=":${WEBOTS_DISPLAY:-99}"
+    export MESA_SHADER_CACHE_DISABLE=true
+    export GALLIUM_NUM_THREADS=1
+    export LP_NUM_THREADS=1
+    export mesa_glthread=false
     Xvfb "$DISPLAY" -screen 0 1280x1024x24 -nolisten tcp &
     sleep 1
     exec webots "${ARGS[@]}" --no-rendering --minimize "$WORLD_DIR/current.wbt"

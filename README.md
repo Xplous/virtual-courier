@@ -5,13 +5,41 @@ ROS 2 Humble, Webots, SLAM Toolbox и Nav2/MPPI. Реализованы иссл
 
 ## Запуск
 
-В Docker:
+В Docker (локальные окна через X11/WSLg):
 
 ```bash
 xhost +local:docker
 docker compose build solution
 docker compose up
 ```
+
+В Docker через веб-браузер (noVNC / доступ по белому IP):
+
+```bash
+# Windows
+.\run_web.bat
+
+# Linux / WSL
+./tools/run_web.sh
+```
+В браузере откроется рабочий стол с Webots, RViz и встроенной консолью управления:
+- Локально: http://localhost:8080
+- Из интернета / со смартфона: http://93.100.190.101:8080
+
+> **Управление из браузера (для вас и друзей):**
+> В нижней части экрана открыт интерактивный терминал с быстрыми командами:
+> - `restart_all` — перезапустить симуляцию с нуля (Webots + Решение)
+> - `restart_solution` — перезапустить только решение (`start.launch.py`)
+> - `stop_solution` — остановить решение
+> - `solution_shell` — войти в bash внутри контейнера решения (ROS 2 CLI, colcon build)
+> - `referee_logs` — смотреть live-логи очков и рефери
+> 
+> *Подсказка:* Клик правой кнопкой мыши в любом месте рабочего стола открывает меню с этими же действиями в один клик.
+
+> **Режимы скорости:**
+> - По умолчанию физика симуляции идет в реальном времени (`WEBOTS_MODE=realtime`).
+> - Для ускоренного прогона заездов (в 2–4 раза быстрее с сохранением 3D-картинки):
+>   В `.env` добавьте `WEBOTS_MODE=run` или запустите `$env:WEBOTS_MODE="run"; .\run_web.bat`.
 
 На хосте с установленным ROS 2 Humble, Nav2/MPPI и SLAM Toolbox:
 

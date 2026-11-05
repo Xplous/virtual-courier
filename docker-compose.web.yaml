@@ -1,0 +1,47 @@
+# Расширение docker-compose для доступа к симуляции через браузер (noVNC / Web GUI).
+# Запуск:
+#   docker compose -f docker-compose.yaml -f docker-compose.override.yaml -f docker-compose.web.yaml up
+# В браузере: http://localhost:8080 или http://<ВНЕШНИЙ_IP>:8080
+services:
+  novnc:
+    build:
+      context: .
+      dockerfile: docker/novnc/Dockerfile
+    image: virtual-courier-novnc:latest
+    container_name: vc_novnc
+    restart: unless-stopped
+    environment:
+      DISPLAY_WIDTH: ${DISPLAY_WIDTH:-1280}
+      DISPLAY_HEIGHT: ${DISPLAY_HEIGHT:-720}
+      DISPLAY_NUM: 1
+      VNC_PASSWORD: ${VNC_PASSWORD:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "2222:22"
+    ipc: host
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/workspace
+    healthcheck:
+      test: ["CMD-SHELL", "test -e /tmp/.X11-unix/X1 && netstat -tuln | grep -q :8080 || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+      start_period: 3s
+
+  scene:
+    environment:
+      DISPLAY: :1
+    depends_on:
+      novnc:
+        condition: service_healthy
+
+  solution:
+    environment:
+      DISPLAY: :1
+    depends_on:
+      novnc:
+        condition: service_healthy
+      scene:
+        condition: service_healthy
