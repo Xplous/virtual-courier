@@ -207,11 +207,11 @@ class Courier(Node):
     def remember_station_cell(self, detection):
         if detection.marker_id not in (1, 2, 3):
             return
-        # Фильтр ArUco: отсекаем далекие (d > 2.2 м) и косые (|bearing| > 35 град) детекции
-        if detection.distance <= 0.15 or detection.distance > 2.2:
+        # Фильтр ArUco: принимаем детекции до 3.5 м
+        if detection.distance <= 0.15 or detection.distance > 3.5:
             return
         bearing = math.atan2(float(detection.tvec[0]), float(detection.tvec[2]))
-        if abs(bearing) > math.radians(35.0):
+        if abs(bearing) > math.radians(50.0):
             return
 
         prev_dist = self.station_distances.get(detection.marker_id, float('inf'))
@@ -236,7 +236,7 @@ class Courier(Node):
             transform = self.tf_buffer.lookup_transform(
                 "maze_grid",
                 point.header.frame_id,
-                rclpy.time.Time.from_msg(point.header.stamp),
+                rclpy.time.Time(),
             )
         except TransformException:
             return
@@ -371,6 +371,27 @@ class Courier(Node):
             + len([d for d in self.known_stations.values() if d.state == StationState.INACTIVE])
             >= 3
         )
+
+        # Мгновенная погрузка при обнаружении маркера станции вблизи:
+        close_station = next(
+            (
+                d
+                for d in detections
+                if d.marker_id in (1, 2, 3)
+                and d.marker_id not in self.collected_stations
+                and d.distance < 0.85
+            ),
+            None,
+        )
+        if close_station and self.state in ("EXPLORE", "DOCK_STATION"):
+            self.stop()
+            self.target_station_id = close_station.marker_id
+            self.cargo_loader.start_loading(t, self.cargo_count)
+            self.state = "LOAD_CARGO"
+            self.get_logger().info(
+                f"[INSTANT CARGO LOAD] Маркер станции {close_station.name} прямо перед роботом (d={close_station.distance:.2f}м < 0.85м). Запуск LOAD_CARGO!"
+            )
+
         if self.state == "EXPLORE":
             # Защита от зависания исследования с грузом на борту:
             if self.cargo_count > 0:
@@ -415,9 +436,8 @@ class Courier(Node):
                     self.station_nav_started = t
                     self.state = "DOCK_STATION"
                     self.get_logger().info(
-                        f"[BATCH] Станция {target.name}: Nav2 направляется к её клетке (в кузове {self.cargo_count} груз(а))."
+                        f"Станция {target.name}: Nav2 направляется к её клетке."
                     )
-            # Иначе: если станций нет, но есть 1-2 кубика в кузове и t < 480 с -> спокойно продолжаем EXPLORE (разведка с грузом)!
 
         elif self.state == "DOCK_STATION":
             try:
@@ -444,12 +464,24 @@ class Courier(Node):
 
         elif self.state == "NAV_TO_UNLOAD":
             det_0 = next((d for d in detections if d.marker_id == 0), None)
-            if det_0 and det_0.distance < 1.0:
+            try:
+                pos = self.tf_buffer.lookup_transform(
+                    "maze_grid", "base_link", rclpy.time.Time()
+                ).transform.translation
+                in_start_zone = (pos.x <= 1.8 and pos.y <= 1.8)
+            except TransformException:
+                in_start_zone = False
+
+            if det_0 and (det_0.distance < 1.5 or in_start_zone):
                 self.stop()
                 self.get_logger().info(
-                    f"Маркер выгрузки ArUco 0 в упор (d={det_0.distance:.2f}м < 1.0м). Переход к DOCK_UNLOAD."
+                    f"Маркер выгрузки ArUco 0 обнаружен (d={det_0.distance:.2f}м, в зоне старта={in_start_zone}). Переход к DOCK_UNLOAD."
                 )
                 self.state = "DOCK_UNLOAD"
+            elif in_start_zone and det_0 is None:
+                # В зоне старта, но маркер ArUco 0 не в кадре — плавно вращаемся для поиска маркера
+                self.drive(0.0, 0.4)
+                self.status_detail = "In start zone: scanning for ArUco 0 marker"
 
         elif self.state == "LOAD_CARGO":
             self.set_tray(TRAY_DOWN)

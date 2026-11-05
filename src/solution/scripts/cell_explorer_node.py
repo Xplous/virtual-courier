@@ -326,10 +326,10 @@ class CellExplorer(MazeGrid):
             if self.active is not None and self.active.get("is_home"):
                 return
             target_point = None
-            if self.start_cell is not None:
-                target_point = self.free_point(self.start_cell)
-            if target_point is None and self.start_point is not None:
+            if self.start_point is not None:
                 target_point = self.start_point
+            elif self.start_cell is not None:
+                target_point = self.free_point(self.start_cell)
             if target_point is not None:
                 home_candidate = dict(
                     cell=self.start_cell if self.start_cell is not None else (0, 0),
