@@ -1,0 +1,12 @@
+scenario: scene/scenarios/public_1.yaml
+seeds: [2026, 92813, 37400, 52332, 58603]
+matrix:
+  turn_weight: [1.0, 2.0, 4.0]
+  perimeter_weight: [0.0, 2.0, 4.0]
+simulation_limit: 600
+wall_timeout: 1200
+core_limit_mb: 1024
+max_core_dumps: 3
+ros_domain_id: 92
+scene_image: ghcr.io/ssskiv/virtual-courier-scene:latest
+solution_image: virtual-courier-solution:headless

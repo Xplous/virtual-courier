@@ -56,21 +56,30 @@ path_weight × длина пути + turn_weight × начальный пово�
 В RViz: зелёные переходы открыты, красные закрыты, серые неизвестны.
 Посещённые клетки жёлтые; с проверенными выходами — зелёные. Красная точка — цель.
 
-## Прогоны без GUI
+## Серия заездов без GUI
 
-Перед серией остановите обычное решение и сцену.
+На Linux нужны Docker и Python с PyYAML; ROS на хосте не требуется.
+Перед серией остановите другие симуляции на этом сервере.
 
 ```bash
-source /opt/ros/humble/setup.bash
-python3 tools/run_exploration_batch.py \
-  --output playground-vaniog/exploration-batch/new-run \
-  --seeds 2026 92813 37400 52332 58603 75375 --workers 2
+sudo apt-get install -y docker.io python3-yaml
+sudo docker build -t virtual-courier-solution:headless \
+  -f docker/solution/Dockerfile.headless docker/solution
+python3 tools/run_delivery_sweep.py --dry-run
+mkdir -p playground-vaniog
+sudo nohup python3 tools/run_delivery_sweep.py \
+  --output playground-vaniog/night-01 > playground-vaniog/night-01.log 2>&1 &
 ```
 
-Каждый заезд использует снимок решения, отдельный ROS-домен и Xvfb-дисплей.
-Лимит — 600 секунд симуляции. Результаты: `summary.csv`, `summary.json`, сценарии,
-траектории и логи. Наблюдатель измеряет реальное покрытие и столкновения;
-привилегированные данные сцены алгоритму не передаются.
+Набор параметров и seeds: [delivery_sweep.yaml](tools/delivery_sweep.yaml).
+По умолчанию — 45 последовательных заездов по 600 секунд симуляции.
+Runner сохраняет снимок исходников, параметры каждого заезда, логи и нагрузку.
+Итоги в `summary.csv` и `summary.json`: баллы судьи, доставленные грузы, время,
+столкновения, CPU и RAM. Каждой серии нужен новый каталог результатов.
+
+Для дампов: `sudo sysctl -w 'kernel.core_pattern=/cores/core.%e.%p.%t'`.
+Runner сохраняет первые 3 core-файла в каталогах заездов `cores/`, до 1 ГБ каждый.
+После этого новые дампы отключаются. Для запуска без дампов задайте `max_core_dumps: 0`.
 
 ## Соревнование
 
