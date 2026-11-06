@@ -64,45 +64,39 @@
     \centering
     \vspace*{5mm}
     {\large\textbf{МИНИСТЕРСТВО НАУКИ И ВЫСШЕГО ОБРАЗОВАНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИ}\par}
-    {\large ФГБОУ ВО «Московский государственный технический университет имени Н.Э. Баумана}\par
-    {\large (национальный исследовательский университет)»\par}
-    \vspace{5mm}
-    {\textbf{Центр молодёжной робототехники МГТУ им. Н.Э. Баумана}\par}
-    \vspace{20mm}
+    {\large ФГАОУ ВО «Национальный исследовательский университет ИТМО»\par}
+    {\large Факультет систем управления и робототехники\par}
+    \vspace{2mm}
+    {\small Направление: «Робототехника и искусственный интеллект», специальность «Мехатроника и робототехника»\par}
+    \vspace{25mm}
     \rule{\linewidth}{1.5pt}\\[4mm]
     {\huge\bfseries\color{navy_dark} ИНЖЕНЕРНАЯ КНИГА}\\[3mm]
     {\Large\bfseries Комплексное программное решение для автономного робота-курьера в недетерминированном лабиринте}\\[2mm]
     {\large Соревнования в среде симуляции «Виртуальный курьер-2026»}\\[1mm]
     \rule{\linewidth}{1.5pt}
     
-    \vspace{15mm}
-    
-    \begin{figure}[H]
-        \centering
-        \includegraphics[width=0.75\textwidth]{figures/arena_3d_overview.png}
-        \caption{Виртуальный соревновательный полигон $16 \times 16$\,м в симуляторе Webots R2025a}
-    \end{figure}
+    \vspace{35mm}
 
     \vfill
 
     \begin{flushright}
-    \begin{minipage}{0.55\textwidth}
-        \textbf{Команда:} «Hybrid Courier»\\[1.5mm]
-        \textbf{Участники:}\\[1mm]
-        \textbf{Филиппов Никита Александрович} \\
-        \textit{Капитан команды, Lead Software Engineer}\\
-        МГТУ им. Н.Э. Баумана\\
-        GitHub: \texttt{Xplous}, E-mail: \texttt{nikita@hybrid-ai.ru}\\[2mm]
+    \begin{minipage}{0.65\textwidth}
+        \textbf{Команда:} «Hybrid Courier»\\[2mm]
+        \textbf{Участники:}\\[1.5mm]
         \textbf{Тарасов Иван} \\
-        \textit{Robotics \& Navigation Engineer}\\
-        МГТУ им. Н.Э. Баумана\\
-        GitHub: \texttt{vaniog}, E-mail: \texttt{vaniog@yandex-team.ru}\\[3mm]
+        \textit{Капитан команды, Robotics \& Navigation Engineer}\\
+        Университет ИТМО (Мехатроника и робототехника)\\
+        GitHub: \texttt{vaniog}, E-mail: \texttt{forvantar@gmail.com}\\[2.5mm]
+        \textbf{Филиппов Никита Александрович} \\
+        \textit{Robotics \& Autonomous Systems Engineer}\\
+        Университет ИТМО (Мехатроника и робототехника)\\
+        GitHub: \texttt{Xplous}, E-mail: \texttt{nick.filippoff2016@yandex.ru}\\[3.5mm]
         \textbf{Дата представления:} Ноябрь 2026 г.
     \end{minipage}
     \end{flushright}
     
-    \vspace{10mm}
-    {\large Москва, 2026}
+    \vspace{15mm}
+    {\large Санкт-Петербург, 2026}
 \end{titlepage}
 
 \tableofcontents
@@ -112,18 +106,18 @@
 \section{Общие сведения о команде и распределение ролей (п. 13.2.1)}
 
 \subsection{Состав команды и академическая принадлежность}
-Команда «Hybrid Courier» сформирована студентами Московского государственного технического университета имени Н.Э. Баумана для участия во втором этапе научно-образовательной цепочки «Основы автономной робототехники: от теории к практике» $\to$ «Виртуальный курьер» $\to$ «Цифровой курьер».
+Команда «Hybrid Courier» сформирована студентами Национального исследовательского университета ИТМО (Факультет систем управления и робототехники, направление подготовки «Робототехника и искусственный интеллект», специализация «Мехатроника и робототехника») для участия во втором этапе научно-образовательной цепочки «Основы автономной робототехники: от теории к практике» $\to$ «Виртуальный курьер» $\to$ «Цифровой курьер».
 
 \begin{table}[htbp]
 \centering
 \small
-\begin{tabularx}{\textwidth}{p{3.8cm}p{3.2cm}p{3.2cm}X}
+\begin{tabularx}{\textwidth}{p{3.2cm}p{3.0cm}p{3.8cm}X}
 \toprule
 \textbf{Участник} & \textbf{Учебное заведение} & \textbf{Роль в проекте} & \textbf{Зона инженерной ответственности} \\
 \midrule
-\textbf{Филиппов Никита} & МГТУ им. Баумана & Капитан, Lead Software Engineer & Архитектура FSM (\texttt{courier\_node}), компьютерное зрение и фильтрация сингулярностей (\texttt{station\_detector}), регулятор стыковки PBVS (\texttt{docking\_controller}), контроллер самосвальной разгрузки (\texttt{unload\_controller}), кросс-платформенная среда запуска (\texttt{run\_eval.ps1}). \\
+\textbf{Тарасов Иван} & Университет ИТМО & Капитан команды, Robotics \& Navigation Engineer & Картографирование SLAM (\texttt{slam\_toolbox}), навигация Nav2 MPPI, алгоритмы исследования лабиринта (\texttt{cell\_explorer\_node}), топологическая сетка (\texttt{maze\_grid\_node}), генерация тестовых матриц и запуск бенчмарков. E-mail: \url{forvantar@gmail.com}. \\
 \midrule
-\textbf{Тарасов Иван} & МГТУ им. Баумана & Robotics \& Navigation Engineer & Картографирование SLAM (\texttt{slam\_toolbox}), навигация Nav2 MPPI, алгоритмы исследования лабиринта (\texttt{cell\_explorer\_node}), топологическая сетка (\texttt{maze\_grid\_node}), генерация тестовых матриц и запуск бенчмарков. \\
+\textbf{Филиппов Никита} & Университет ИТМО & Robotics \& Autonomous Systems Engineer & Архитектура FSM (\texttt{courier\_node}), компьютерное зрение и фильтрация сингулярностей (\texttt{station\_detector}), регулятор стыковки PBVS (\texttt{docking\_controller}), контроллер самосвальной разгрузки (\texttt{unload\_controller}), кросс-платформенная среда запуска (\texttt{run\_eval.ps1}). E-mail: \url{nick.filippoff2016@yandex.ru}. \\
 \bottomrule
 \end{tabularx}
 \caption{Состав команды и функциональное распределение ролей}
@@ -136,20 +130,20 @@
 \begin{table}[htbp]
 \centering
 \small
-\begin{tabular}{lcccc}
+\begin{tabularx}{\textwidth}{X>{\centering\arraybackslash}p{3.5cm}>{\centering\arraybackslash}p{3.5cm}>{\centering\arraybackslash}p{4.2cm}}
 \toprule
-\textbf{Подсистема / Модуль} & \textbf{Н. Филиппов} & \textbf{И. Тарасов} & \textbf{Архитектурный арбитраж} \\
+\textbf{Подсистема / Модуль} & \textbf{И. Тарасов (Капитан)} & \textbf{Н. Филиппов} & \textbf{Архитектурный арбитраж} \\
 \midrule
-Конечный автомат миссии доставки (\texttt{courier\_node}) & R / A & C & Н. Филиппов \\
-Компьютерное зрение: ArUco solvePnP и HSV (\texttt{station\_detector}) & R / A & I & Н. Филиппов \\
-Прецизионная стыковка по маркерам PBVS & R / A & C & Н. Филиппов \\
-Контроллер кормовой выгрузки по лидару (\texttt{unload\_controller}) & R / A & I & Н. Филиппов \\
-Настройка картографирования SLAM Toolbox (\texttt{slam\_toolbox}) & C & R / A & И. Тарасов \\
-Стек локального управления Nav2 (MPPI Controller) & C & R / A & И. Тарасов \\
-Глобальный исследователь сетки лабиринта (\texttt{cell\_explorer\_node}) & C & R / A & И. Тарасов \\
-Инфраструктура массового sweep-тестирования (\texttt{run\_delivery\_sweep}) & I & R / A & И. Тарасов \\
+Конечный автомат миссии (\texttt{courier\_node}) & C & R / A & Н. Филиппов \\
+Компьютерное зрение и HSV (\texttt{station\_detector}) & I & R / A & Н. Филиппов \\
+Прецизионная PBVS-стыковка & C & R / A & Н. Филиппов \\
+Выгрузка по кормовому лидару (\texttt{unload\_controller}) & I & R / A & Н. Филиппов \\
+Картографирование SLAM (\texttt{slam\_toolbox}) & R / A & C & И. Тарасов \\
+Локальное управление Nav2 (MPPI Controller) & R / A & C & И. Тарасов \\
+Исследование сетки лабиринта (\texttt{cell\_explorer}) & R / A & C & И. Тарасов \\
+Параметрический sweep-бенчмарк & R / A & I & И. Тарасов \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \caption{Матрица ответственности при проектировании программного комплекса}
 \label{tab:raci}
 \end{table}
@@ -198,21 +192,21 @@ S_{\text{max}} = 5 + 3 \cdot 10 + 3 \cdot 15 + 3 \cdot 25 + 20 + 20 = 195\,\text
 \begin{table}[htbp]
 \centering
 \small
-\begin{tabular}{lcc}
+\begin{tabularx}{\textwidth}{X>{\centering\arraybackslash}p{4.8cm}>{\centering\arraybackslash}p{4.8cm}}
 \toprule
 \textbf{Фаза миссии} & \textbf{Челночная тактика (3 рейса)} & \textbf{Пакетная тактика (1 рейс)} \\
 \midrule
-Исследование и движение к станциям & $3 \times 85\,\text{с} = 255\,\text{с}$ & $1 \times 165\,\text{с} = 165\,\text{с}$ \\
-Стыковка со станциями ($3 \times 12\,\text{с}$) & $36\,\text{с}$ & $36\,\text{с}$ \\
-Выдержка Dwell Time на станциях ($3 \times 2\,\text{с}$) & $6\,\text{с}$ & $6\,\text{с}$ \\
+Исследование и поиск станций & $3 \times 85\,\text{с} = 255\,\text{с}$ & $1 \times 165\,\text{с} = 165\,\text{с}$ \\
+Стыковка со станциями & $3 \times 12\,\text{с} = 36\,\text{с}$ & $3 \times 12\,\text{с} = 36\,\text{с}$ \\
+Выдержка Dwell Time $\ge 2$\,с & $3 \times 2\,\text{с} = 6\,\text{с}$ & $3 \times 2\,\text{с} = 6\,\text{с}$ \\
 Транспортировка к зоне выгрузки & $3 \times 70\,\text{с} = 210\,\text{с}$ & $1 \times 75\,\text{с} = 75\,\text{с}$ \\
-Процедура выгрузки (разворот, лидар, опрокидывание) & $3 \times 22\,\text{с} = 66\,\text{с}$ & $1 \times 24\,\text{с} = 24\,\text{с}$ \\
+Процедура разгрузки & $3 \times 22\,\text{с} = 66\,\text{с}$ & $1 \times 24\,\text{с} = 24\,\text{с}$ \\
 \midrule
-\textbf{Суммарное время заезда $T$} & \textbf{573 с (критично близко к лимиту)} & \textbf{306--330 с} \\
+\textbf{Суммарное время заезда $T$} & \textbf{573 с (риск таймаута)} & \textbf{306--330 с (запас 270 с)} \\
 \textbf{Бонус за скорость $B_{\text{time}}$} & $\approx +1\,\text{балл}$ & $\mathbf{+9\dots+10\,\text{баллов}}$ \\
 \textbf{Риск срыва по таймауту 600 с} & Высокий ($> 45\%$) & Минимальный ($< 2\%$) \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \caption{Сравнительный анализ временных затрат при различных тактиках доставки}
 \label{tab:strategy_comparison}
 \end{table}
@@ -237,10 +231,11 @@ S_{\text{max}} = 5 + 3 \cdot 10 + 3 \cdot 15 + 3 \cdot 25 + 20 + 20 = 195\,\text
 
 \begin{figure}[htbp]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-    node distance=1.2cm and 1.2cm,
-    block/.style={rectangle, draw=bmstu_blue, fill=blue!5, rounded corners, thick, text centered, minimum height=0.9cm, font=\small\sffamily, align=center},
-    rosnode/.style={rectangle, draw=navy_dark, fill=code_bg, rounded corners, thick, text centered, minimum height=1.1cm, inner sep=6pt, font=\small\bfseries\sffamily, align=center},
+    node distance=1.1cm and 1.4cm,
+    block/.style={rectangle, draw=bmstu_blue, fill=blue!5, rounded corners=4pt, thick, text centered, minimum height=0.9cm, font=\small\sffamily, align=center},
+    rosnode/.style={rectangle, draw=navy_dark, fill=code_bg, rounded corners=4pt, thick, text centered, minimum height=1.1cm, inner sep=6pt, font=\small\bfseries\sffamily, align=center},
     topic/.style={ellipse, draw=accent_teal, fill=accent_teal!10, text centered, font=\scriptsize\ttfamily, align=center},
     arrow/.style={-Latex, thick, color=navy_dark}
 ]
@@ -249,20 +244,20 @@ S_{\text{max}} = 5 + 3 \cdot 10 + 3 \cdot 15 + 3 \cdot 25 + 20 + 20 = 195\,\text
 \node[rosnode, fill=green!10] (webots) {Webots Simulation / Robot Sensors};
 
 % Узлы первого эшелона
-\node[rosnode, right=2.0cm of webots] (costmap_cloud) {\texttt{costmap\_cloud\_node}};
-\node[rosnode, above=0.9cm of costmap_cloud] (slam) {\texttt{slam\_toolbox}};
-\node[rosnode, below=0.9cm of costmap_cloud] (detector) {\texttt{station\_detector}};
+\node[rosnode, right=1.6cm of webots] (costmap_cloud) {\texttt{costmap\_cloud\_node}};
+\node[rosnode, above=0.8cm of costmap_cloud] (slam) {\texttt{slam\_toolbox}};
+\node[rosnode, below=0.8cm of costmap_cloud] (detector) {\texttt{station\_detector}};
 
 % Навигационный стек Nav2
-\node[rosnode, fill=blue!10, right=2.0cm of slam] (nav2) {Nav2 Stack\\(MPPI Controller / SmacPlanner2D)};
-\node[rosnode, fill=blue!5, above=0.6cm of nav2] (planner_server) {\texttt{/exploration/planner\_server}\\(Path Evaluator)};
+\node[rosnode, fill=blue!10, right=1.6cm of slam] (nav2) {Nav2 Stack\\(MPPI Controller / SmacPlanner2D)};
+\node[rosnode, fill=blue!5, above=0.5cm of nav2] (planner_server) {\texttt{/exploration/planner\_server}\\(Path Evaluator)};
 
 % Интеллектуальные узлы
-\node[rosnode, right=2.0cm of costmap_cloud] (cell_explorer) {\texttt{cell\_explorer\_node}\\(Labyrinth Exploration)};
-\node[rosnode, fill=orange!15, right=2.0cm of detector] (courier) {\texttt{courier\_node}\\(Master Delivery FSM)};
+\node[rosnode, right=1.6cm of costmap_cloud] (cell_explorer) {\texttt{cell\_explorer\_node}\\(Labyrinth Exploration)};
+\node[rosnode, fill=orange!15, right=1.6cm of detector] (courier) {\texttt{courier\_node}\\(Master Delivery FSM)};
 
 % Приводы
-\node[rosnode, fill=red!10, right=2.0cm of courier] (base) {Robot Chassis / Tray Actuator};
+\node[rosnode, fill=red!10, right=1.6cm of courier] (base) {Robot Chassis / Tray Actuator};
 
 % Связи
 \draw[arrow] (webots) -- node[above, font=\tiny\ttfamily] {/scan} (costmap_cloud);
@@ -283,7 +278,8 @@ S_{\text{max}} = 5 + 3 \cdot 10 + 3 \cdot 15 + 3 \cdot 25 + 20 + 20 = 195\,\text
 \draw[arrow] (courier) -- node[above, font=\tiny\ttfamily] {/cmd\_vel (Dock/Unload)} (base);
 \draw[arrow] (courier) |- node[near start, below, font=\tiny\ttfamily] {/courier/tray\_cmd} (base);
 
-\end{tikzpicture}
+\end{tikzpicture}%
+}
 \caption{Архитектура информационных потоков и узлов ROS 2 программного комплекса}
 \label{fig:ros2_architecture}
 \end{figure}
@@ -294,7 +290,7 @@ S_{\text{max}} = 5 + 3 \cdot 10 + 3 \cdot 15 + 3 \cdot 25 + 20 + 20 = 195\,\text
 \begin{table}[htbp]
 \centering
 \small
-\begin{tabularx}{\textwidth}{p{4.0cm}p{4.2cm}p{3.5cm}X}
+\begin{tabularx}{\textwidth}{p{3.6cm}p{4.6cm}p{3.2cm}X}
 \toprule
 \textbf{Топик} & \textbf{Тип сообщения} & \textbf{Источник $\to$ Приемник} & \textbf{Назначение} \\
 \midrule
@@ -315,12 +311,13 @@ S_{\text{max}} = 5 + 3 \cdot 10 + 3 \cdot 15 + 3 \cdot 25 + 20 + 20 = 195\,\text
 
 \subsection{Преодоление рассинхронизации TF: узел \texttt{costmap\_cloud\_node}}
 При стандартной конфигурации Nav2 считывание лазерных сканов через плагин \texttt{ObstacleLayer} приводило к систематическим ошибкам вида:
-\begin{verbatim}
-[costmap_2d]: Message Filter dropping message: frame 'laser' timestamp extrapolation into future
-\end{verbatim}
+\begin{lstlisting}[language=bash]
+[costmap_2d]: Message Filter dropping message:
+frame 'laser' timestamp extrapolation into future
+\end{lstlisting}
 Причина заключается в асинхронном характере обновления трансформаций одометрии и публикации сканов лидара в симуляции Webots при переменном коэффициенте реального времени (RTF). 
 
-Для решения этой проблемы был разработан специализированный промежуточный узел \texttt{costmap\_cloud\_node.py}. Он принимает сообщение \texttt{LaserScan}, отфильтровывает лучи вне допустимого диапазона $[0.12, 8.0]$\,м, формирует локальное трехмерное облако точек \texttt{PointCloud2} и присваивает ему текущую отметку времени фрейма \texttt{base\_link}. В результате слои локальной и глобальной карт стоимостей Nav2 переведены на чтение топика \texttt{/costmap/points}, что полностью ликвидировало пропуски сканов и ошибки экстраполяции TF.
+Для решения этой проблемы был разработан отдельный узел \texttt{costmap\_cloud\_node.py}. Он принимает сообщение \texttt{LaserScan}, отфильтровывает лучи вне диапазона $[0.12, 8.0]$\,м, формирует локальное облако точек \texttt{PointCloud2} и присваивает ему текущую метку времени фрейма \texttt{base\_link}. В результате слои локальной и глобальной карт стоимостей Nav2 переведены на чтение топика \texttt{/costmap/points}, что полностью ликвидировало пропуски сканов и ошибки экстраполяции TF.
 
 % ==================== 4. ОБРАБОТКА ДАННЫХ ДАТЧИКОВ ====================
 \section{Методы обработки данных датчиков (п. 13.2.3)}
@@ -329,9 +326,9 @@ S_{\text{max}} = 5 + 3 \cdot 10 + 3 \cdot 15 + 3 \cdot 25 + 20 + 20 = 195\,\text
 Для картирования и локализации на мобильной платформе задействован пакет \texttt{slam\_toolbox} в асинхронном режиме (\texttt{async\_slam\_toolbox\_node}). В качестве ядра решения задачи графовой нелинейной оптимизации применен Ceres Solver (\texttt{solver\_plugins::CeresSolver}) с алгоритмом Левенберга-Марквардта и блочным предобусловливателем Шура-Якоби.
 
 \textbf{Фундаментальное инженерное решение:} Полное отключение механизма замыкания петель:
-\begin{verbatim}
+\begin{lstlisting}[language=bash]
 do_loop_closing: false
-\end{verbatim}
+\end{lstlisting}
 \textit{Обоснование:} Полигон соревнований представляет собой регулярную сетку $8 \times 8$ с идентичными по ширине коридорами ($2.0$\,м) и монотонными плоскими стенами. Стандартные дескрипторы сканов в таких симметричных лабиринтах генерируют ложноположительные замыкания петель (False Positive Loop Closures), приводящие к мгновенному перекручиванию глобальной карты (Map Twisting). Благодаря высокой частоте сканирования (10 Гц) и сверхмалому шагу дискретизации пространства поиска Ceres (\texttt{correlation\_search\_space\_resolution: 0.01}\,м), локальный scan matching обеспечивает бесшовное построение ортогонального плана лабиринта без накопления углового дрейфа на интервале 600 секунд.
 
 \subsection{Топологическая дискретизация и выравнивание сетки (\texttt{maze\_grid\_node})}
@@ -353,8 +350,8 @@ i = \left\lfloor \frac{x - x_0 + L/2}{s_{\text{cell}}} \right\rfloor, \quad j = 
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.65\textwidth]{figures/camera_view.jpg}
-\caption{Работа модуля компьютерного зрения \texttt{station\_detector}: распознавание маркера ArUco ID=1, репроекция сферы сигнальной лампы и определение статуса ACTIVE}
+\includegraphics[width=0.75\textwidth]{figures/camera_view_detected.png}
+\caption{Работа модуля компьютерного зрения \texttt{station\_detector}: распознавание маркера ArUco ID=1 на стене станции A, 3D-репроекция сферы сигнальной лампы и подтверждение статуса ACTIVE (зеленая лампа готовности к выдаче груза)}
 \label{fig:cv_view}
 \end{figure}
 
@@ -370,9 +367,9 @@ s_{\text{img}} \begin{bmatrix} u \\ v \\ 1 \end{bmatrix} = \mathbf{K} \left( \ma
 
 \subsubsection{Защита от сингулярностей (NaN-Barrier Protection)}
 \textbf{Критическое устранение программного сбоя:} В процессе стресс-тестирования на экстремальных углах заезда робота в коридоры был выявлен отказ:
-\begin{verbatim}
+\begin{lstlisting}[language=bash]
 ValueError: cannot convert float NaN to integer in station_detector.py
-\end{verbatim}
+\end{lstlisting}
 При взгляде на плоскость маркера под углом $> 75^\circ$ вектор поворота $\mathbf{rvec}$ и матрица преобразования Родригеса порождали деление на околонулевой определитель, в результате чего функция \texttt{cv2.projectPoints} возвращала значения $\text{NaN}$ или $\pm \infty$. При последующем округлении координат для выделения ROI программа аварийно завершалась.
 
 В модуле \texttt{station\_detector.py} был внедрен численный барьер:
@@ -400,39 +397,53 @@ r_{\text{ROI}} = \operatorname{clip}\left(\frac{f_x \cdot R_{\text{lamp}}}{Z_c},
 Если доля пикселей $\rho_{\text{green}} \ge 0.15$, станция классифицируется как \texttt{ACTIVE}; если $\rho_{\text{orange}} \ge 0.15$ — как \texttt{ISSUED}. При средней яркости $\bar{V} < 60$ лампа считается темной (\texttt{INACTIVE}).
 
 % ==================== 5. АЛГОРИТМЫ УПРАВЛЕНИЯ И FSM ====================
-\section{Стратегия выполнения миссии и алгоритмы управления (п. 13.2.4)}
+\section{Стратегия миссии и алгоритмы управления (п. 13.2.4)}
 
 \subsection{Конечный автомат доставки (\texttt{courier\_node} FSM)}
 Центральным управляющим ядром миссии является конечный автомат состояний (FSM), реализованный в узле \texttt{courier\_node.py}.
 
 \begin{figure}[htbp]
 \centering
+\resizebox{0.95\textwidth}{!}{%
 \begin{tikzpicture}[
-    node distance=1.5cm and 2.0cm,
-    state/.style={rectangle, draw=bmstu_blue, fill=blue!8, rounded corners, thick, text centered, minimum height=1.0cm, minimum width=3.2cm, font=\small\bfseries\sffamily},
-    transition/.style={-Latex, thick, color=navy_dark, font=\scriptsize\sffamily}
+    state/.style={rectangle, draw=bmstu_blue, fill=blue!8, rounded corners=5pt, thick, text centered, minimum height=1.15cm, minimum width=3.8cm, font=\small\bfseries\ttfamily, align=center},
+    trans/.style={-{Latex[length=3mm, width=2mm]}, thick, color=navy_dark},
+    lbl/.style={fill=white, draw=gray!30, rounded corners=2pt, inner sep=3pt, font=\scriptsize\sffamily, align=center}
 ]
 
-\node[state] (wait) {\texttt{WAIT\_SENSORS}};
-\node[state, right=of wait] (explore) {\texttt{EXPLORE}};
-\node[state, right=of explore] (dock_st) {\texttt{DOCK\_STATION}};
-\node[state, below=of dock_st] (load) {\texttt{LOAD\_CARGO}};
-\node[state, left=of load] (nav_unl) {\texttt{NAV\_TO\_UNLOAD}};
-\node[state, left=of nav_unl] (dock_unl) {\texttt{DOCK\_UNLOAD}};
-\node[state, below=of dock_unl] (unload) {\texttt{UNLOAD}};
-\node[state, right=of unload] (complete) {\texttt{MISSION\_COMPLETE}};
+% Левая колонка: Исследование и Загрузка
+\node[state] (wait) at (0, 7.5) {WAIT\_SENSORS};
+\node[state] (explore) at (0, 5.0) {EXPLORE};
+\node[state] (dock_st) at (0, 2.5) {DOCK\_STATION};
+\node[state] (load) at (0, 0.0) {LOAD\_CARGO};
 
-\draw[transition] (wait) -- node[above] {Сенсоры готовы} (explore);
-\draw[transition] (explore) -- node[above] {Маркер 1..3 \& ACTIVE} (dock_st);
-\draw[transition] (dock_st) -- node[right] {Попадание в $0.65$\,м} (load);
-\draw[transition] (load) -- node[above] {$N_{\text{cargo}} \ge 3 \lor \text{ReturnDue}$} (nav_unl);
-\draw[transition] (load) |- node[near start, above] {$N_{\text{cargo}} < 3$} (explore);
-\draw[transition] (nav_unl) -- node[above] {Виден ArUco 0} (dock_unl);
-\draw[transition] (dock_unl) -- node[left] {$d \le 0.65$\,м} (unload);
-\draw[transition] (unload) -- node[above] {Все станции доставлены} (complete);
-\draw[transition] (unload) -| node[near end, left] {Остались станции} (explore);
+% Правая колонка: Возврат и Выгрузка
+\node[state, fill=green!10, draw=accent_teal] (complete) at (8.0, 7.5) {MISSION\_COMPLETE};
+\node[state] (unload) at (8.0, 5.0) {UNLOAD};
+\node[state] (dock_unl) at (8.0, 2.5) {DOCK\_UNLOAD};
+\node[state] (nav_unl) at (8.0, 0.0) {NAV\_TO\_UNLOAD};
 
-\end{tikzpicture}
+% Переходы левой колонки
+\draw[trans] (wait) -- node[lbl] {Сенсоры готовы} (explore);
+\draw[trans] (explore) -- node[lbl] {Маркер 1..3 \& ACTIVE} (dock_st);
+\draw[trans] (dock_st) -- node[lbl] {Стыковка: $d = 0.65$\,м} (load);
+
+% Переход между колонками (загрузка завершена)
+\draw[trans] (load) -- node[lbl] {$N_{\text{cargo}} \ge 3 \lor \text{ReturnDue}$} (nav_unl);
+
+% Дозагрузка (обратная связь в EXPLORE слева)
+\draw[trans] (load.west) to[out=160, in=200] node[lbl, left=2mm] {Грузов $< 3$\\ (дозагрузка)} (explore.west);
+
+% Переходы правой колонки
+\draw[trans] (nav_unl) -- node[lbl] {Виден ArUco 0} (dock_unl);
+\draw[trans] (dock_unl) -- node[lbl] {Корма: $\delta \le 8.5$\,см} (unload);
+\draw[trans] (unload) -- node[lbl] {Все станции\\ доставлены} (complete);
+
+% Повторный выезд на поиск
+\draw[trans] (unload) -- node[lbl] {Остались активные\\ станции на полигоне} (explore);
+
+\end{tikzpicture}%
+}
 \caption{Граф переходов главного конечного автомата доставки (\texttt{Delivery FSM})}
 \label{fig:fsm_graph}
 \end{figure}
@@ -524,10 +535,10 @@ T_{\text{dwell}} = \int_{t_{\text{stop}}}^{t} \mathbb{I}\left( |v(\tau)| < 0.03\
 
 Модуль \texttt{cargo\_loader.py}:
 \begin{enumerate}
-    \item Подает команду полного останова $v=0, \omega=0$ и гарантирует горизонтальный угол наклона кузова $\alpha_{\text{tray}} = 0.0$\,рад.
-    \item Отслеживает непрерывный таймер неподвижности по топику симуляционного времени \texttt{/clock}.
-    \item Ожидает дискретного инкремента счетчика весового датчика \texttt{/courier/cargo\_count} ($\Delta N \ge 1$).
-    \item Содержит сторожевой таймер таймаута: если груз не выпал за 4.0\,с (сбой бункера или смена фазы), статус сбрасывается и робот возобновляет миссию.
+    \item Подает команду полного останова $v=0, \omega=0$ и переводит лоток в горизонт $\alpha_{\text{tray}} = 0.0$\,рад.
+    \item Отслеживает непрерывное время покоя по топику симуляции \texttt{/clock}.
+    \item Фиксирует срабатывание датчика веса \texttt{/courier/cargo\_count} ($\Delta N \ge 1$).
+    \item Содержит сторожевой таймер: если груз не выпал за 4.0\,с (сбой бункера или смена фазы), статус сбрасывается и миссия продолжается.
 \end{enumerate}
 
 \begin{figure}[htbp]
@@ -630,16 +641,16 @@ L_{\text{rear}} = x_{\text{lidar}} + R = 0.09 + 0.175 = 0.265\,\text{м}.
 \begin{table}[htbp]
 \centering
 \small
-\begin{tabular}{ccccccc}
+\begin{tabularx}{\textwidth}{>{\centering\arraybackslash}p{1.7cm}>{\centering\arraybackslash}p{1.7cm}>{\centering\arraybackslash}p{1.7cm}>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}p{2.3cm}}
 \toprule
-$\tau_{\text{upd}}$ (с) & $L_{\text{ext}}$ (м) & $w_{\text{perim}}$ & Среднее время $T$ (с) & Доставлено грузов & Столкновения & Успешность (Win Rate) \\
+\textbf{$\tau_{\text{upd}}$ (с)} & \textbf{$L_{\text{ext}}$ (м)} & \textbf{$w_{\text{perim}}$} & \textbf{Среднее время $T$} & \textbf{Доставлено грузов} & \textbf{Число касаний} & \textbf{Успешность (Win Rate)} \\
 \midrule
 1.0 & 1.5 & 0.0 & 492 с & 1.8 / 3.0 & 1.2 & 45\% \\
 1.0 & 2.5 & 2.0 & 410 с & 2.4 / 3.0 & 0.4 & 75\% \\
 0.5 & 2.5 & 2.0 & 365 с & 2.7 / 3.0 & 0.0 & 88\% \\
 \textbf{0.5} & \textbf{3.5} & \textbf{4.0} & \textbf{325 с} & \textbf{3.0 / 3.0} & \textbf{0.0} & \textbf{100\%} \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \caption{Сводные результаты оптимизации параметров навигации и исследования}
 \label{tab:sweep_results}
 \end{table}
