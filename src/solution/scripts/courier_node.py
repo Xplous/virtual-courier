@@ -334,7 +334,11 @@ class Courier(Node):
         }.get(self.state, "Starting docking")
 
         # 1. Компьютерное зрение: детекция станций, ламп и зоны выгрузки
-        detections = self.detector.detect(self.image)
+        try:
+            detections = self.detector.detect(self.image)
+        except Exception as e:
+            self.get_logger().warn(f"Ошибка детекции станций: {e}", throttle_duration_sec=2.0)
+            detections = []
         status_dict = {}
 
         for det in detections:

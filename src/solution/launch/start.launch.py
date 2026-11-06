@@ -86,6 +86,8 @@ def generate_launch_description():
                 name="cell_explorer",
                 output="screen",
                 parameters=[os.path.join(pkg, "config", "cell_explorer.yaml")],
+                respawn=True,
+                respawn_delay=2.0,
             ),
             Node(
                 package="solution",
@@ -93,6 +95,8 @@ def generate_launch_description():
                 name="courier",
                 output="screen",
                 parameters=[{"use_sim_time": True, "gui": LaunchConfiguration("gui")}],
+                respawn=True,
+                respawn_delay=2.0,
             ),
             Node(
                 package="rviz2",

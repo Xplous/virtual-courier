@@ -11,6 +11,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
+import math
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -147,7 +148,22 @@ class StationDetector:
             proj_pts, _ = cv2.projectPoints(
                 self.LAMP_OFFSET_3D, rvec, tvec, self.camera_matrix, self.dist_coeffs
             )
-            u_lamp, v_lamp = int(round(proj_pts[0, 0, 0])), int(round(proj_pts[0, 0, 1]))
+            pt_x = float(proj_pts[0, 0, 0])
+            pt_y = float(proj_pts[0, 0, 1])
+
+            if not (math.isfinite(pt_x) and math.isfinite(pt_y)):
+                results.append(StationDetection(
+                    marker_id=mid,
+                    name=self.STATION_NAMES[mid],
+                    state=StationState.UNKNOWN,
+                    distance=distance,
+                    tvec=tvec.ravel(),
+                    rvec=rvec.ravel(),
+                    marker_corners=pts_2d,
+                ))
+                continue
+
+            u_lamp, v_lamp = int(round(pt_x)), int(round(pt_y))
 
             # Оценка радиуса лампы в пикселях
             radius_px = max(4, int(round((self.fx * self.LAMP_RADIUS_M) / max(0.2, distance))))

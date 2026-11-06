@@ -1,0 +1,35 @@
+name: random_907475981
+seed: 907475981
+grid:
+- 8
+- 8
+cell_size: 2.0
+loops: 0.18
+obstacles: 10
+time_limit: 600
+start_timeout: 120
+start:
+  cell:
+  - 0
+  - 0
+  side: W
+  yaw_deg: 0
+stations:
+- id: A
+  cell:
+  - 7
+  - 2
+  side: E
+  active: true
+- id: B
+  cell:
+  - 4
+  - 7
+  side: N
+  active: true
+- id: C
+  cell:
+  - 0
+  - 6
+  side: W
+  active: true
