@@ -13,5 +13,10 @@ __pycache__/
 .vscode/
 .env
 docker-compose.override.yaml
-camera_view.jpg
-src/solution/camera_view.jpg
+/camera_view.jpg
+/src/solution/camera_view.jpg
+!docs/engineering_book/figures/**
+*.aux
+*.log
+*.out
+*.toc
