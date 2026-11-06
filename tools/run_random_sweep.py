@@ -24,9 +24,29 @@ SCENE_IMAGE = "ghcr.io/ssskiv/virtual-courier-scene@sha256:12c3a340e42859108e67f
 SOLUTION_IMAGE = "ghcr.io/ssskiv/virtual-courier-solution@sha256:e06619c2863a3ff79c9a8a80153180afc055297325dfeea1acd47f1bcc66ae73"
 
 
+def seed_groups(rng, variants, summary):
+    if summary is not None:
+        rows = [json.loads(line) for line in summary.read_text().splitlines()]
+        tested = {row["seed"] for row in rows
+                  if (row["update_period"], row["extension_distance"]) == (0.5, 3.5)}
+        difficult = {row["seed"] for row in rows
+                     if row["score"] is None or row["score"] <= 180}
+        for seed in sorted(difficult - tested):
+            yield seed, [(0.5, 3.5)]
+        return
+    seeds = set()
+    while True:
+        seed = rng.randrange(1, 1_000_000_000)
+        if seed not in seeds:
+            seeds.add(seed)
+            yield seed, rng.sample(variants, 3)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--recheck-summary", type=Path,
+                        help="Run 0.5 s / 3.5 m on seeds scoring <=180 without this variant")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     revision = subprocess.check_output(
@@ -55,7 +75,9 @@ def main():
     rng = random.Random(sampler_seed)
     variants = list(itertools.product((0.5, 1.0), (1.5, 2.5, 3.5)))
     manifest = dict(revision=revision, sampler_seed=sampler_seed,
-                    variants=variants, variants_per_seed=3,
+                    variants=[(0.5, 3.5)] if args.recheck_summary else variants,
+                    variants_per_seed=1 if args.recheck_summary else 3,
+                    recheck_summary=str(args.recheck_summary) if args.recheck_summary else None,
                     scene_image=SCENE_IMAGE, solution_image=SOLUTION_IMAGE,
                     launcher="tools/run_eval.sh", mode="realtime")
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
@@ -63,13 +85,9 @@ def main():
                WEBOTS_MODE="realtime", SCENARIO_DIR=str(out / "scenarios"),
                RESULTS_DIR=str(out / "results"))
     index = 0
-    seeds = set()
-    while not (out / "STOP").exists():
-        seed = rng.randrange(1, 1_000_000_000)
-        if seed in seeds:
-            continue
-        seeds.add(seed)
-        selected = rng.sample(variants, 3)
+    for seed, selected in seed_groups(rng, variants, args.recheck_summary):
+        if (out / "STOP").exists():
+            return
         with (out / "plan.jsonl").open("a") as stream:
             stream.write(json.dumps(dict(seed=seed, variants=selected)) + "\n")
         name = f"random_{seed}"
