@@ -31,7 +31,12 @@ def seed_groups(rng, variants, summary):
                   if (row["update_period"], row["extension_distance"]) == (0.5, 3.5)}
         difficult = {row["seed"] for row in rows
                      if row["score"] is None or row["score"] <= 180}
-        for seed in sorted(difficult - tested):
+        scores = {}
+        for row in rows:
+            scores.setdefault(row["seed"], []).append(row["score"] or 0)
+        ordered = sorted(difficult - tested,
+                         key=lambda seed: (sum(scores[seed]) / len(scores[seed]), seed))
+        for seed in ordered:
             yield seed, [(0.5, 3.5)]
         return
     seeds = set()
