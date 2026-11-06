@@ -551,7 +551,10 @@ class Courier(Node):
         elif self.state == "DOCK_UNLOAD":
             det = next((d for d in detections if d.marker_id == 0), None)
             if det:
-                offset = (0.0, 0.1, -0.1)[self.unload_count % 3]
+                offset = (
+                    0.0 if self.cargo_count >= 3
+                    else (0.0, 0.1, -0.1)[self.unload_count % 3]
+                )
                 rotation, _ = cv2.Rodrigues(det.rvec)
                 target = det.tvec + offset * rotation[:, 0]
                 res = compute_docking_cmd(target, self.dock_config, front_laser)
