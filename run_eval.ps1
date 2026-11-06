@@ -3,7 +3,8 @@ param(
     [string]$Scenario = "public_1",
     [int]$Attempt = 1,
     [string]$Gui = "false",
-    [string]$Mode = "realtime"
+    [string]$Mode = "realtime",
+    [bool]$Gpu = $true
 )
 
 $ErrorActionPreference = "Continue"
@@ -63,20 +64,27 @@ $env:COMPOSE_PROJECT_NAME = "vc_eval"
 $env:SOLUTION_DIR = $solutionPath
 $env:SCENARIO_DIR = (Resolve-Path "$PSScriptRoot\scene\scenarios").Path
 
-# 5. Stop existing containers
+# 5. Build Compose Command
+$composeArgs = @("-p", "vc_eval", "-f", "$PSScriptRoot\docker-compose.yaml", "-f", "$PSScriptRoot\docker-compose.eval.yaml")
+if ($Gpu -and (Test-Path "$PSScriptRoot\docker-compose.override.yaml")) {
+    $composeArgs += @("-f", "$PSScriptRoot\docker-compose.override.yaml")
+    Write-Host ">>> GPU Acceleration: Enabled (NVIDIA RTX)" -ForegroundColor Green
+}
+
+# Stop existing containers
 Write-Host "`n>>> Stopping any existing vc_eval containers..." -ForegroundColor Yellow
-docker compose -p vc_eval -f "$PSScriptRoot\docker-compose.yaml" -f "$PSScriptRoot\docker-compose.eval.yaml" down --remove-orphans 2>$null
+docker compose @composeArgs down --remove-orphans 2>$null
 docker rm -f vc_solution vc_scene vc_controllers 2>$null
 
 # 6. Run official jury simulation
 Write-Host ">>> Starting Jury Evaluation..." -ForegroundColor Cyan
 $exitCode = 0
 try {
-    docker compose -p vc_eval -f "$PSScriptRoot\docker-compose.yaml" -f "$PSScriptRoot\docker-compose.eval.yaml" up --abort-on-container-exit --exit-code-from scene
+    docker compose @composeArgs up --abort-on-container-exit --exit-code-from scene
     $exitCode = $LASTEXITCODE
 } finally {
     Write-Host "`n>>> Cleaning up containers..." -ForegroundColor Yellow
-    docker compose -p vc_eval -f "$PSScriptRoot\docker-compose.yaml" -f "$PSScriptRoot\docker-compose.eval.yaml" down --remove-orphans 2>$null
+    docker compose @composeArgs down --remove-orphans 2>$null
     docker rm -f vc_solution vc_scene vc_controllers 2>$null
 }
 
