@@ -11,10 +11,9 @@ install(PROGRAMS
   scripts/docking_controller.py
   scripts/cargo_loader.py
   scripts/unload_controller.py
+  scripts/maze_grid_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
-
-install(FILES scripts/maze_grid_node.py DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}/

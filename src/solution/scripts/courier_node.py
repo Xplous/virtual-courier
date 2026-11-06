@@ -691,8 +691,8 @@ class Courier(Node):
             self.station_target_pub.publish(self.station_target)
         self.publish_status_marker()
 
-        # 4. Визуализация и оверлей
-        if self.image is not None:
+        # 4. Визуализация и оверлей (активна только в GUI-режиме)
+        if self.gui and self.image is not None:
             view = self.detector.draw_detections(self.image, detections)
             cv2.putText(
                 view,
@@ -703,11 +703,8 @@ class Courier(Node):
                 (0, 0, 255),
                 2,
             )
-            cv2.imwrite("/ros_ws/src/solution/camera_view.jpg", view)
-
-            if self.gui:
-                cv2.imshow("courier camera", view)
-                cv2.waitKey(1)
+            cv2.imshow("courier camera", view)
+            cv2.waitKey(1)
 
 
 def main():
